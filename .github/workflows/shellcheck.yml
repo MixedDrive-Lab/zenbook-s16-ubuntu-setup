@@ -1,0 +1,30 @@
+name: shellcheck
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**/*.sh'
+      - '.github/workflows/shellcheck.yml'
+  pull_request:
+    paths:
+      - 'scripts/**/*.sh'
+      - '.github/workflows/shellcheck.yml'
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run shellcheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: ./scripts
+          severity: warning
+          # Allow `source` of files relative to the script dir (we use it heavily)
+          additional_files: |
+            scripts/lib/common.sh
+        env:
+          SHELLCHECK_OPTS: -e SC1091 -e SC2024

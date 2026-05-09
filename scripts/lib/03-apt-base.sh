@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# ============================================================================
+# Section 03 — Base APT packages
+#
+# Installs the must-have set every Ubuntu workstation needs:
+# build essentials, version-control, common dev libraries, terminal QoL,
+# Flatpak runtime, GitHub CLI.
+#
+# Extended libraries (Vulkan/Mesa stack, Ruby/Postgres deps, etc) live in
+# Section 04 to keep this section lean and quick.
+# ============================================================================
+
+# shellcheck source=common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+
+run_section_03_apt_base() {
+    log "=== Section 03: Base APT packages ==="
+
+    log "Updating APT cache + upgrading existing packages..."
+    if [[ "$DRY_RUN" != "true" ]]; then
+        sudo apt update >>"$LOG_FILE" 2>&1
+        sudo apt full-upgrade -y >>"$LOG_FILE" 2>&1 || warn "full-upgrade returned non-zero"
+    fi
+
+    log "Installing build essentials + common dev libraries..."
+    apt_install \
+        build-essential cmake git curl wget unzip zip p7zip-full \
+        ca-certificates gnupg gpg \
+        software-properties-common pkg-config \
+        autoconf bison clang \
+        python3-pip python3-venv python3-dev \
+        python3-setuptools python3-wheel pipx \
+        gfortran
+
+    log "Installing terminal QoL tools..."
+    apt_install \
+        htop btop tmux tree ncdu \
+        ripgrep fd-find bat jq direnv fzf zsh \
+        eza zoxide plocate apache2-utils tldr \
+        gir1.2-gtop-2.0 gir1.2-clutter-1.0
+
+    log "Installing Flatpak runtime + Flathub..."
+    apt_install flatpak gnome-software-plugin-flatpak gnome-shell-extension-manager
+    if [[ "$DRY_RUN" != "true" ]]; then
+        sudo flatpak remote-add --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo >>"$LOG_FILE" 2>&1 || true
+        success "Flathub remote configured"
+    fi
+
+    # GitHub CLI — official repo
+    if command -v gh &>/dev/null; then
+        success "GitHub CLI already installed"
+    else
+        log "Adding GitHub CLI repository..."
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log "[DRY-RUN] add gh apt repo + install gh"
+        else
+            sudo install -m 0755 -d /etc/apt/keyrings
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+                | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg status=none
+            sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+                | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+            sudo apt update >>"$LOG_FILE" 2>&1
+            sudo apt install -y gh >>"$LOG_FILE" 2>&1 || error "gh install failed"
+            success "GitHub CLI installed"
+        fi
+    fi
+
+    log "Installing useful CLI extras..."
+    apt_install ffmpeg libimage-exiftool-perl rclone restic yamllint okular inkscape
+
+    success "Section 03 complete"
+}

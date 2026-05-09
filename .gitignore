@@ -1,0 +1,19 @@
+# Logs
+*.log
+.cache/
+
+# OS detritus
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test artifacts
+test-output/
+*.deb
+*.tar.gz
