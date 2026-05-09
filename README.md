@@ -1,34 +1,23 @@
 # zenbook-s16-ubuntu-setup
 
-> Battle-tested Ubuntu 24.04 LTS setup for ASUS Zenbook S16 (UM5606) with AMD Ryzen AI 9 HX 370. Kernel 6.17.0-20 pinned for amdxdna NPU compatibility. Auto-setup script + manual walkthrough.
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/24.04/)
-[![Hardware](https://img.shields.io/badge/Hardware-Zenbook%20S16-blue)]()
-
----
-
-## What This Is
-
-This repository contains the development environment setup used at [MixedDrive Lab](https://mixeddrivelab.org) on the primary research workstation: **ASUS Zenbook S16 (UM5606)** with **AMD Ryzen AI 9 HX 370** and **32 GB RAM**, running **Ubuntu 24.04.4 LTS** (Wayland).
+Battle-tested Ubuntu 24.04 LTS setup for the **ASUS Zenbook S16 (UM5606)** with **AMD Ryzen AI 9 HX 370** (Strix Point). Pins kernel `6.17.0-20` for `amdxdna` NPU compatibility, then installs a sane developer baseline plus opt-in extras.
 
 > **Status:** alpha (`v0.1.0`). Tested on a single Zenbook S16 UM5606HA. PRs welcome — see `.github/ISSUE_TEMPLATE/hardware_compat.md` if you have a different revision.
 
----
-
 ## What this gives you
 
-| Layer                    |      Default      | Description                                                  |
-| ------------------------ | :---------------: | ------------------------------------------------------------ |
-| Pre-flight checks        |         ✅         | Verifies Ubuntu 24.04, amd64, sudo, internet, disk space, hardware ID |
-| Kernel pin (`6.17.0-20`) |         ✅         | Avoids the `amdxdna_drm_open: SVA bind device failed, ret -95` regression on kernels ≥ 6.17.0-22 |
-| Base APT packages        |         ✅         | `build-essential`, common dev libs, terminal QoL (`ripgrep`, `eza`, `zoxide`, `fzf`, `bat`, `fd-find`, etc), GitHub CLI, Flatpak runtime |
-| Extended APT             |         ✅         | Runtime libs (Ruby/Python/Postgres deps), full Vulkan/Mesa stack (Steam-ready), `thermald`, `lm-sensors`, `stress-ng`, `gfortran`, SLAM dev libs (`libeigen3-dev`, `libopencv-dev`, `libceres-dev`) |
-| Dev toolchain            |         ✅         | [`mise`](https://mise.jdx.dev) version manager, Docker CE + Compose v2 |
-| AI stack                 | `--with-ai-stack` | Cursor, Warp Terminal, Node.js 22, Claude Code CLI           |
-| Apps stack               |   `--with-apps`   | 1Password, Google Chrome, LocalSend, Typora, Gum, LazyGit, LazyDocker, Ulauncher |
-| Flatpak apps             | `--with-flatpak`  | OnlyOffice, Obsidian, Audacity, GIMP, Pinta, VLC, HandBrake, Kdenlive, Spotify, Discord, Zoom |
-| Gaming                   |  `--with-gaming`  | Steam + ProtonUp-Qt                                          |
+| Layer | Default | Description |
+|---|:-:|---|
+| Pre-flight checks | ✅ | Verifies Ubuntu 24.04, amd64, sudo, internet, disk space, hardware ID |
+| Kernel pin (`6.17.0-20`) | ✅ | Avoids the `amdxdna_drm_open: SVA bind device failed, ret -95` regression on kernels ≥ 6.17.0-22 |
+| Base APT packages | ✅ | `build-essential`, common dev libs, terminal QoL (`ripgrep`, `eza`, `zoxide`, `fzf`, `bat`, `fd-find`, etc), GitHub CLI, Flatpak runtime |
+| Extended APT | ✅ | Runtime libs (Ruby/Python/Postgres deps), full Vulkan/Mesa stack (Steam-ready), `thermald`, `lm-sensors`, `stress-ng`, `gfortran`, SLAM dev libs (`libeigen3-dev`, `libopencv-dev`, `libceres-dev`) |
+| Dev toolchain | ✅ | [`mise`](https://mise.jdx.dev) version manager, Docker CE + Compose v2 |
+| AI stack | `--with-ai-stack` | Cursor, Warp Terminal, Node.js 22, Claude Code CLI |
+| Apps stack | `--with-apps` | 1Password, Google Chrome, LocalSend, Typora, Gum, LazyGit, LazyDocker, Ulauncher |
+| Flatpak apps | `--with-flatpak` | OnlyOffice, Obsidian, Audacity, GIMP, Pinta, VLC, HandBrake, Kdenlive, Spotify, Discord, Zoom |
+| Gaming | `--with-gaming` | Steam + ProtonUp-Qt |
+| AMD XRT NPU stack | `--with-xrt` | ROCm + XRT runtime + XDNA plugin (two-phase install with reboot in between, requires user-provided EULA-gated .deb files — see [`docs/09-xrt-stack.md`](docs/09-xrt-stack.md)) |
 
 All sections are **idempotent** — re-running is safe.
 
@@ -88,7 +77,7 @@ See [`docs/02-kernel-pinning.md`](docs/02-kernel-pinning.md) for the full story 
 ./scripts/validate.sh
 ```
 
-Section IDs: `01` preflight, `02` kernel pin, `03` apt base, `04` apt extended, `05` dev toolchain, `06` ai stack, `07` apps, `08` flatpak, `09` gaming, `10` validation.
+Section IDs: `01` preflight, `02` kernel pin, `03` apt base, `04` apt extended, `05` dev toolchain, `06` ai stack, `07` apps, `08` flatpak, `09` gaming, `10` validation, `11a` xrt prep, `11b` xrt install.
 
 ## Repository layout
 
@@ -106,6 +95,7 @@ zenbook-s16-ubuntu-setup/
 │   ├── 06-flatpak-apps.md     # Flatpak vs apt
 │   ├── 07-validation.md       # post-install checks
 │   ├── 08-troubleshooting.md  # common issues
+│   ├── 09-xrt-stack.md        # AMD XRT NPU stack (--with-xrt)
 │   └── hardware-quirks.md     # Zenbook S16 specifics (battery, webcam, etc)
 ├── scripts/
 │   ├── setup.sh               # main entry — see ./scripts/setup.sh --help
@@ -145,6 +135,3 @@ CI runs the same on every push.
 - Skeleton informed by community knowledge around `amdxdna` regressions (LKML threads, Ubuntu kernel team mailing list).
 - `mise`, LazyGit, LazyDocker, Gum, LocalSend — open-source projects this script wraps. Please star their repos.
 - Built and tested at **MixedDrive Lab**, an independent research initiative based in Bandung, Indonesia.
-
----
-

@@ -50,6 +50,10 @@ source "$LIB_DIR/07-apps-stack.sh"
 source "$LIB_DIR/08-flatpak-apps.sh"
 # shellcheck source=lib/09-gaming.sh
 source "$LIB_DIR/09-gaming.sh"
+# shellcheck source=lib/11a-xrt-prep.sh
+source "$LIB_DIR/11a-xrt-prep.sh"
+# shellcheck source=lib/11b-xrt-install.sh
+source "$LIB_DIR/11b-xrt-install.sh"
 # shellcheck source=lib/10-validate.sh
 source "$LIB_DIR/10-validate.sh"
 
@@ -72,6 +76,7 @@ WITH_AI_STACK=0
 WITH_APPS=0
 WITH_FLATPAK=0
 WITH_GAMING=0
+WITH_XRT=0
 SECTION=""
 
 usage() {
@@ -88,20 +93,30 @@ OPTIONS:
                          Gum + LazyGit + LazyDocker + Ulauncher
     --with-flatpak       Install Flatpak apps (media + comms + productivity)
     --with-gaming        Install Steam + ProtonUp-Qt
-    --all                Shortcut for --with-ai-stack --with-apps --with-flatpak --with-gaming
-    --section N          Run only section N (01–10, also accepts numeric: 1–10)
+    --with-xrt           Install AMD XRT NPU stack (Sections 11a + 11b).
+                         Requires user-provided XRT .deb files in
+                         ~/Downloads/xrt-bundle/ (EULA-gated, see
+                         docs/09-xrt-stack.md). 11a runs pre-reboot,
+                         11b runs after reboot.
+    --xrt-bundle-dir DIR Override location of XRT bundle (default
+                         ~/Downloads/xrt-bundle). Same as XRT_BUNDLE_DIR env.
+    --all                Shortcut for --with-ai-stack --with-apps
+                         --with-flatpak --with-gaming. Does NOT include
+                         --with-xrt (opt-in only).
+    --section N          Run only section N (01–10, 11a, 11b)
     -h, --help           Show this help
 
 ENVIRONMENT OVERRIDES:
     DRY_RUN=true                     Same as --dry-run
     ZENBOOK_SKIP_KERNEL_PIN=1        Skip section 02 (kernel pinning)
+    XRT_BUNDLE_DIR=/path/to/dir      Same as --xrt-bundle-dir
     NO_COLOR=1                       Disable colored output
 
 EXAMPLES:
     # Minimal install (sections 01–05)
     ./scripts/setup.sh
 
-    # Full install
+    # Full install (excluding XRT — opt-in only)
     ./scripts/setup.sh --all
 
     # Just verify kernel + GPU stack
@@ -109,6 +124,11 @@ EXAMPLES:
 
     # Preview what --with-apps would do
     ./scripts/setup.sh --dry-run --with-apps
+
+    # XRT NPU install (two-phase, reboot in between)
+    ./scripts/setup.sh --with-xrt              # runs 11a, banner reboot
+    sudo reboot
+    ./scripts/setup.sh --with-xrt              # detects 11a done, runs 11b
 EOF
 }
 
@@ -119,6 +139,15 @@ while [[ $# -gt 0 ]]; do
         --with-apps)      WITH_APPS=1 ;;
         --with-flatpak)   WITH_FLATPAK=1 ;;
         --with-gaming)    WITH_GAMING=1 ;;
+        --with-xrt)       WITH_XRT=1 ;;
+        --xrt-bundle-dir)
+            shift
+            if [[ -z "${1:-}" ]]; then
+                error "--xrt-bundle-dir requires a path argument"
+                exit 1
+            fi
+            export XRT_BUNDLE_DIR="$1"
+            ;;
         --all)
             WITH_AI_STACK=1; WITH_APPS=1; WITH_FLATPAK=1; WITH_GAMING=1 ;;
         --section)
@@ -162,6 +191,8 @@ _section_num() {
         8|08) echo "08" ;;
         9|09) echo "09" ;;
         10)   echo "10" ;;
+        11a) echo "11a" ;;
+        11b) echo "11b" ;;
         *)    echo "" ;;
     esac
 }
@@ -179,8 +210,10 @@ if [[ -n "$SECTION" ]]; then
         08) run_section_08_flatpak_apps ;;
         09) run_section_09_gaming ;;
         10) run_section_10_validate ;;
+        11a) run_section_11a_xrt_prep ;;
+        11b) run_section_11b_xrt_install ;;
         *)
-            error "Invalid section: $SECTION (valid: 01-10)"
+            error "Invalid section: $SECTION (valid: 01-10, 11a, 11b)"
             exit 1
             ;;
     esac
@@ -196,6 +229,15 @@ else
     [[ "$WITH_APPS"     == "1" ]] && { run_section_07_apps_stack  || warn "Section 07 had errors"; }
     [[ "$WITH_FLATPAK"  == "1" ]] && { run_section_08_flatpak_apps || warn "Section 08 had errors"; }
     [[ "$WITH_GAMING"   == "1" ]] && { run_section_09_gaming       || warn "Section 09 had errors"; }
+
+    # XRT smart dispatch: run 11a if not done, else run 11b
+    if [[ "$WITH_XRT" == "1" ]]; then
+        if [[ -f "$HOME/.cache/zenbook-s16-setup/xrt-prep-done" ]]; then
+            run_section_11b_xrt_install || warn "Section 11b (XRT install) had errors"
+        else
+            run_section_11a_xrt_prep || warn "Section 11a (XRT prep) had errors"
+        fi
+    fi
 fi
 
 log "============================================"

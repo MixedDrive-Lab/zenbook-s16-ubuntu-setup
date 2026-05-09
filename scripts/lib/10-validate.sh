@@ -161,6 +161,40 @@ else
     miss "i386 architecture NOT enabled (Steam will fail to install — run: sudo dpkg --add-architecture i386 && sudo apt update)"
 fi
 
+hdr "XRT NPU stack (--with-xrt)"
+if [[ -x /opt/xilinx/xrt/bin/xrt-smi ]]; then
+    ok "xrt-smi installed at /opt/xilinx/xrt/bin/xrt-smi"
+    # Quick examine — exit code typically 0 even if no NPU; parse output
+    xrt_out=$(sudo -n /opt/xilinx/xrt/bin/xrt-smi examine 2>&1 || true)
+    if echo "$xrt_out" | grep -qiE "NPU|Strix|amdxdna"; then
+        ok "xrt-smi examine reports NPU device"
+    else
+        miss "xrt-smi examine ran but did not report an NPU device"
+    fi
+else
+    miss "xrt-smi not installed (run --with-xrt; see docs/09-xrt-stack.md)"
+fi
+if dpkg -l rocm-core 2>/dev/null | grep -q "^ii"; then
+    ok "rocm-core installed (ROCm runtime present)"
+else
+    miss "rocm-core not installed"
+fi
+if id -nG 2>/dev/null | grep -qw render; then
+    ok "$USER in 'render' group"
+else
+    miss "$USER NOT in 'render' group (XRT won't see NPU)"
+fi
+if id -nG 2>/dev/null | grep -qw video; then
+    ok "$USER in 'video' group"
+else
+    miss "$USER NOT in 'video' group"
+fi
+if [[ -f /etc/security/limits.d/99-amdxdna.conf ]]; then
+    ok "memlock limits configured at /etc/security/limits.d/99-amdxdna.conf"
+else
+    miss "memlock limits not configured (large NPU buffers may fail)"
+fi
+
 hdr "Kernel hold status"
 if apt-mark showhold 2>/dev/null | grep -q "^linux-image-generic"; then
     ok "linux-image-generic is held (good — won't auto-upgrade past 6.17.0-20)"

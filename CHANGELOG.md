@@ -6,6 +6,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-05-09
+
+### Added
+
+- **AMD XRT NPU stack** (`--with-xrt`, opt-in). Two-phase install with reboot in between:
+  - **Section 11a** (`scripts/lib/11a-xrt-prep.sh`): pre-flight checks, locate XRT bundle (default `~/Downloads/xrt-bundle/`), auto-download `amdgpu-install_*.deb` from `repo.radeon.com` if missing, run `amdgpu-install --usecase=rocm,hiplibsdk --no-dkms`, add user to `render`+`video` groups, print "REBOOT REQUIRED" banner. State tracked at `~/.cache/zenbook-s16-setup/xrt-prep-done`.
+  - **Section 11b** (`scripts/lib/11b-xrt-install.sh`): post-reboot install of the four XRT `.deb` files (base, base-dev, npu, plugin-amdxdna), append `source /opt/xilinx/xrt/setup.sh` to `~/.bashrc`, write `/etc/security/limits.d/99-amdxdna.conf` for memlock unlimited, run `xrt-smi examine` for verification.
+  - **Smart dispatch**: `./scripts/setup.sh --with-xrt` runs 11a if not done, 11b if 11a is complete (detected via state file).
+  - **EULA-gated files**: the four XRT `.deb` files are part of the AMD Ryzen AI Software bundle and require manual download (AMD account + EULA acceptance). `amdgpu-install_*.deb` is fetched from `repo.radeon.com/amdgpu-install/latest/ubuntu/noble/` (public).
+  - **Bundle override**: `--xrt-bundle-dir <path>` flag or `XRT_BUNDLE_DIR` env var.
+
+- New flag `--with-xrt` and `--xrt-bundle-dir <path>` for `setup.sh`.
+- New section IDs `11a` and `11b` for `--section` dispatch.
+- New documentation `docs/09-xrt-stack.md` covering manual download steps, two-phase flow, manual verification commands, troubleshooting (`SVA bind device failed`, `xrt-smi` no devices, DKMS build failures, missing kernel headers), removal procedure, and an alternative build-from-source path via `amd/xdna-driver`.
+- `zenbook-validate` now checks for `xrt-smi`, ROCm, `render`/`video` group membership, memlock limits, and runs `xrt-smi examine` to detect NPU device.
+
+### Changed
+
+- README.md compatibility table includes `--with-xrt` row.
+- README.md docs list includes `docs/09-xrt-stack.md`.
+- Section IDs reference updated to include `11a` and `11b`.
+- `--all` shortcut intentionally does **not** include `--with-xrt` — XRT requires manual file provisioning, so it stays opt-in.
+
+### Notes
+
+- XRT install requires kernel `6.17.0-20-generic` booted (Section 02 must run first).
+- `--no-dkms` flag on `amdgpu-install` is critical: it preserves the held HWE kernel's `amdxdna` module rather than letting `amdgpu-install` ship its own.
+- The DKMS module from `xrt_plugin*amdxdna.deb` builds against `linux-headers-6.17.0-20-generic`; the `linux-headers-generic-hwe-24.04` package (installed in Section 04) is held alongside the kernel.
+
 ## [0.1.2] — 2026-05-09
 
 ### Fixed
