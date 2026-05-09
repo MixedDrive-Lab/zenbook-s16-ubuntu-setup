@@ -56,10 +56,20 @@ echo "  Architecture: $(uname -m)"
 echo "  Display: ${XDG_SESSION_TYPE:-unknown}"
 
 hdr "amdxdna NPU (multi-method)"
-if lspci -nn 2>/dev/null | grep -iE "signal processing.*1502" -q; then
-    ok "lspci: signal processing device 1502 detected"
+# Known AMD Ryzen AI NPU PCI device IDs (vendor 1022 = AMD):
+#   1022:17f0  Strix Point / Krackan Point / Strix Halo (XDNA 2)
+#   1022:17f1  Strix Halo (newer rev — not yet validated)
+#   1022:1502  Phoenix (XDNA 1, older Ryzen 7040)
+#   1022:150e  Hawk Point (XDNA 1.5)
+# Source: https://github.com/skitzo2000/nix-xdna#hardware-support
+if lspci -nn 2>/dev/null | grep -iqE "1022:(17f0|17f1|1502|150e)"; then
+    npu_id=$(lspci -nn 2>/dev/null | grep -ioE "1022:(17f0|17f1|1502|150e)" | head -1)
+    ok "lspci: AMD NPU detected ($npu_id)"
+elif lspci -nn 2>/dev/null | grep -iq "signal processing"; then
+    sig_dev=$(lspci -nn 2>/dev/null | grep -i "signal processing" | head -1 | grep -oE "1022:[0-9a-f]+" || echo "(unknown ID)")
+    ok "lspci: Signal processing controller detected ($sig_dev) — NPU likely, verify ID"
 else
-    miss "lspci: no signal processing device matching id 1502"
+    miss "lspci: no AMD NPU detected (expected 1022:17f0 for Strix Point)"
 fi
 if lsmod 2>/dev/null | grep -q amdxdna; then
     ok "lsmod: amdxdna module loaded"

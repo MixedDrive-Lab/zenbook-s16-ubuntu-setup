@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-05-09
+
+### Fixed
+
+- **NPU PCI device ID detection in `zenbook-validate`** — corrected wrong device ID `1502` (typo, produced false miss `lspci: no signal processing device matching id 1502` despite NPU being present and functional). Replaced with multi-ID match against all known AMD Ryzen AI variants:
+  - `1022:17f0` Strix Point / Krackan Point / Strix Halo (XDNA 2) — Zenbook S16 falls here
+  - `1022:17f1` Strix Halo newer rev
+  - `1022:1502` Phoenix (XDNA 1, older Ryzen 7040)
+  - `1022:150e` Hawk Point (XDNA 1.5)
+- 2-tier detection in `scripts/lib/10-validate.sh`:
+  1. Primary: exact match against the 4 known IDs above. Output now reports the actual ID detected (e.g. `lspci: AMD NPU detected (1022:17f0)`).
+  2. Fallback: generic "Signal processing" controller match for forward compat with future SKUs.
+- `docs/02-kernel-pinning.md` "Verifying the NPU works" expected output updated from the bogus `signal processing device 1502 detected` to `AMD NPU detected (1022:17f0)`.
+
+### Background
+
+User report: after a successful XRT install, `zenbook-validate` showed `✗ lspci: no signal processing device matching id 1502` while all other amdxdna checks (lsmod, /dev/accel, dmesg) were green. Investigation showed `1502` was a typo from the v0.1.0 initial validation block — Phoenix-era device ID coincidentally exists, but Strix Point uses `17f0`. Manual confirmation: `lspci -nn` on the Zenbook S16 shows `Signal processing controller [1180]: ... [1022:17f0]`.
+
 ## [0.2.1] — 2026-05-09
 
 ### Added
