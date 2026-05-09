@@ -99,53 +99,102 @@ _hold_kernel_packages() {
 
 _set_default_boot() {
     if [[ "$DRY_RUN" == "true" ]]; then
-        log "[DRY-RUN] update-grub + set GRUB default to ${TARGET_KERNEL}-generic"
+        log "[DRY-RUN] update-grub + set GRUB_DEFAULT to ${TARGET_KERNEL}-generic"
         return 0
     fi
 
-    # Configure GRUB to remember the last boot — this way, after the user
-    # manually picks 6.17.0-20-generic once, it sticks.
-    if [[ -f /etc/default/grub ]]; then
-        # Set GRUB_DEFAULT=saved + GRUB_SAVEDEFAULT=true (idempotent)
-        if ! grep -q '^GRUB_DEFAULT=saved' /etc/default/grub; then
-            sudo sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT=saved/' /etc/default/grub
-        fi
-        if ! grep -q '^GRUB_SAVEDEFAULT=' /etc/default/grub; then
-            echo 'GRUB_SAVEDEFAULT=true' | sudo tee -a /etc/default/grub >/dev/null
-        else
-            sudo sed -i 's/^GRUB_SAVEDEFAULT=.*/GRUB_SAVEDEFAULT=true/' /etc/default/grub
-        fi
-        success "/etc/default/grub configured: GRUB_DEFAULT=saved, GRUB_SAVEDEFAULT=true"
+    if [[ ! -f /etc/default/grub ]]; then
+        warn "/etc/default/grub missing — skipping GRUB default config"
+        return 0
     fi
 
+    # Step 1: regenerate grub.cfg first so we can parse it for menuentry IDs.
     log "Updating GRUB so the held kernel is bootable..."
     sudo update-grub >>"$LOG_FILE" 2>&1 || warn "update-grub returned non-zero"
 
-    # Try to find the menuentry id for 6.17.0-20-generic and set it as the
-    # next-boot default.
-    local entry
-    entry=$(awk -F"'" -v k="${TARGET_KERNEL}-generic" '
-        /^submenu / { sub_id = $2 }
-        /^[[:space:]]*menuentry / && index($0, k) {
-            id = $2
-            if (sub_id != "") {
-                print sub_id ">" id
-            } else {
-                print id
-            }
+    # Step 2: Compute the right GRUB_DEFAULT value for ${TARGET_KERNEL}-generic.
+    #
+    # Strategy (most-stable → fallback):
+    #   A. Look up the menuentry id (e.g. gnulinux-6.17.0-20-generic-advanced-UUID).
+    #      Position-independent: survives kernel add/remove, recovery-mode noise.
+    #   B. Fallback to "1>N" position-pair (compatible with submenu structure
+    #      that Ubuntu 24.04 ships by default).
+    local target_default=""
+    local target_kernel_full="${TARGET_KERNEL}-generic"
+
+    # --- Strategy A: menuentry id ---
+    # Match a non-recovery menuentry that mentions our kernel.
+    # awk -F"'" splits on single-quotes; on a typical Ubuntu line like:
+    #   menuentry 'Ubuntu, with Linux 6.17.0-20-generic' --class ... $menuentry_id_option 'gnulinux-...-advanced-UUID' {
+    # field 2 is the visible label, field 4 is the menuentry id we want.
+    local menu_id submenu_id
+    submenu_id=$(awk -F"'" '/^submenu / { print $4; exit }' /boot/grub/grub.cfg 2>/dev/null)
+    menu_id=$(awk -F"'" -v k="$target_kernel_full" '
+        /^[[:space:]]*menuentry / && index($0, k) && !/recovery mode/ {
+            print $4
             exit
         }' /boot/grub/grub.cfg 2>/dev/null)
 
-    if [[ -n "$entry" ]]; then
-        if sudo grub-set-default "$entry" >>"$LOG_FILE" 2>&1; then
-            success "GRUB default set to: $entry"
-            success "Next boot will use ${TARGET_KERNEL}-generic"
-        else
-            warn "grub-set-default failed for entry: $entry"
-            warn "Fall back to picking ${TARGET_KERNEL}-generic manually at the boot menu"
-        fi
-    else
-        warn "Could not locate menuentry for ${TARGET_KERNEL}-generic in /boot/grub/grub.cfg"
-        warn "On boot, hold Shift to enter GRUB menu and pick 'Advanced options' → ${TARGET_KERNEL}-generic"
+    if [[ -n "$submenu_id" ]] && [[ -n "$menu_id" ]]; then
+        target_default="${submenu_id}>${menu_id}"
+        log "Resolved GRUB menuentry id: $target_default"
+    elif [[ -n "$menu_id" ]]; then
+        # No submenu (rare on Ubuntu, but possible)
+        target_default="$menu_id"
+        log "Resolved GRUB menuentry id (no submenu): $target_default"
     fi
+
+    # --- Strategy B: position fallback "1>N" ---
+    if [[ -z "$target_default" ]]; then
+        warn "Could not resolve menuentry id — trying position-based fallback"
+        # Find which position our kernel occupies inside the Advanced submenu.
+        # We assume a single submenu at position 1 (Ubuntu's standard layout).
+        local pos
+        pos=$(awk -F"'" -v k="$target_kernel_full" '
+            BEGIN { in_sub = 0; idx = -1 }
+            /^submenu /         { in_sub = 1; idx = -1; next }
+            /^}/                { if (in_sub) in_sub = 0; next }
+            in_sub && /menuentry / {
+                idx++
+                if (index($0, k) && !/recovery mode/) {
+                    print idx
+                    exit
+                }
+            }' /boot/grub/grub.cfg 2>/dev/null)
+        if [[ -n "$pos" ]]; then
+            target_default="1>${pos}"
+            log "Position-based fallback: $target_default"
+        fi
+    fi
+
+    if [[ -z "$target_default" ]]; then
+        warn "Could not locate ${target_kernel_full} menuentry in /boot/grub/grub.cfg"
+        warn "Inspect manually: awk -F\"'\" '/menuentry|submenu/ {print NR\": \"\$2}' /boot/grub/grub.cfg"
+        warn "Then set /etc/default/grub: GRUB_DEFAULT=\"<submenu>>\<entry>\" and run sudo update-grub"
+        return 0
+    fi
+
+    # Step 3: Set GRUB_DEFAULT in /etc/default/grub idempotently.
+    # We always overwrite the line so re-runs converge to the right value.
+    if grep -q '^GRUB_DEFAULT=' /etc/default/grub; then
+        sudo sed -i "s|^GRUB_DEFAULT=.*|GRUB_DEFAULT=\"${target_default}\"|" /etc/default/grub
+    else
+        echo "GRUB_DEFAULT=\"${target_default}\"" | sudo tee -a /etc/default/grub >/dev/null
+    fi
+
+    # GRUB_SAVEDEFAULT only meaningful with GRUB_DEFAULT=saved; we use a fixed
+    # default now, so unset it (commented) to avoid confusion.
+    sudo sed -i 's/^GRUB_SAVEDEFAULT=true/#GRUB_SAVEDEFAULT=true/' /etc/default/grub
+
+    success "/etc/default/grub: GRUB_DEFAULT=\"${target_default}\""
+
+    # Step 4: Re-run update-grub so the new GRUB_DEFAULT takes effect.
+    log "Regenerating grub.cfg with the new default..."
+    sudo update-grub >>"$LOG_FILE" 2>&1 || warn "second update-grub returned non-zero"
+
+    # Step 5: Verify
+    local actual
+    actual=$(grep '^GRUB_DEFAULT=' /etc/default/grub | head -1)
+    log "Final config: $actual"
+    success "Next boot will use ${target_kernel_full}"
 }

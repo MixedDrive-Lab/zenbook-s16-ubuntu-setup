@@ -173,11 +173,25 @@ if [[ "$(uname -r)" == "6.17.0-20-generic" ]]; then
 else
     miss "Booted on $(uname -r) — expected 6.17.0-20-generic. Reboot and pick the right kernel."
 fi
-# GRUB default config check
-if [[ -f /etc/default/grub ]] && grep -q '^GRUB_DEFAULT=saved' /etc/default/grub; then
-    ok "GRUB configured with GRUB_DEFAULT=saved (last-booted kernel sticks)"
-else
-    miss "GRUB_DEFAULT not 'saved' — next kernel install may shift default boot away from 6.17.0-20"
+# GRUB default — accept multiple valid formats
+if [[ -f /etc/default/grub ]]; then
+    grub_default=$(grep '^GRUB_DEFAULT=' /etc/default/grub 2>/dev/null | head -1)
+    if [[ -z "$grub_default" ]]; then
+        miss "GRUB_DEFAULT not set in /etc/default/grub"
+    elif echo "$grub_default" | grep -qE '6\.17\.0-20|gnulinux-6\.17\.0-20'; then
+        ok "GRUB_DEFAULT points to 6.17.0-20: $grub_default"
+    elif echo "$grub_default" | grep -qE 'GRUB_DEFAULT="[0-9]+>[0-9]+"'; then
+        # Position-based — verify by booted kernel; if -20 booted, it's working
+        if [[ "$(uname -r)" == "6.17.0-20-generic" ]]; then
+            ok "GRUB_DEFAULT uses position fallback ($grub_default) — working (booted -20)"
+        else
+            miss "GRUB_DEFAULT=$grub_default but booted $(uname -r) — fallback not pointing to -20"
+        fi
+    elif echo "$grub_default" | grep -q '^GRUB_DEFAULT=saved'; then
+        miss "GRUB_DEFAULT=saved relies on grubenv (fragile). Setup script v0.1.2+ uses static value instead."
+    else
+        miss "GRUB_DEFAULT is unrecognized: $grub_default"
+    fi
 fi
 
 hdr "Storage"

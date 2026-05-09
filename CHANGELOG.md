@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-05-09
+
+### Fixed
+
+- **Kernel pin GRUB default — `saved` strategy abandoned.** v0.1.1's `GRUB_DEFAULT=saved` + `grub-set-default` approach proved fragile in practice (relies on writeable `/boot/grub/grubenv`, can be silently overwritten by `update-grub`, hard to verify post-set). Replaced with **static `GRUB_DEFAULT="<menuentry-id>"`** approach.
+
+  New strategy in `scripts/lib/02-kernel-pin.sh::_set_default_boot`:
+
+  1. **Primary**: parse `/boot/grub/grub.cfg` for the menuentry id of `6.17.0-20-generic` (e.g. `gnulinux-6.17.0-20-generic-advanced-UUID`) — position-independent, survives kernel add/remove.
+  2. **Fallback**: position-pair like `"1>2"` (Submenu>Entry index) — what works for the typical Ubuntu 24.04 kernel-pinning setup.
+  3. **Verification**: re-run `update-grub` after writing `GRUB_DEFAULT`, then read back and log final config.
+
+- **Validation script** updated to recognize three valid `GRUB_DEFAULT` formats (menuentry-id, position-pair, or kernel name) and cross-check against `uname -r`. Old `GRUB_DEFAULT=saved` is now flagged as a known-fragile config from v0.1.1.
+
+### Background
+
+User report: setup ran successfully, kernel `6.17.0-20-generic` was installed and held, but `uname -r` after reboot consistently returned `6.17.0-23-generic` because GRUB defaulted to position 0 (the latest kernel). User fix: `sudo sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT="1>2"/' /etc/default/grub && sudo update-grub`. v0.1.2 implements this pattern with menuentry-id resolution as the more robust primary path.
+
 ## [0.1.1] — 2026-05-09
 
 ### Fixed

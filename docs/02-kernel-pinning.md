@@ -28,8 +28,20 @@ Without working SVA, no userspace tool can talk to the NPU: ROCm, AMD's XDNA run
    - `linux-modules-6.17.0-20-generic`
    - `linux-modules-extra-6.17.0-20-generic`
 3. Runs `update-grub` so the new kernel is bootable.
-4. Runs `apt-mark hold` on `linux-image-generic`, `linux-headers-generic`, `linux-generic` so future `apt upgrade` won't replace your kernel with `-22+`.
-5. Tells you to reboot.
+4. **Sets `GRUB_DEFAULT` so `6.17.0-20-generic` boots automatically.** Tries to resolve a stable menuentry id from `/boot/grub/grub.cfg` (e.g. `1>gnulinux-6.17.0-20-generic-advanced-UUID`), falls back to a position-pair like `"1>2"` if parsing fails. Then re-runs `update-grub` so the new default takes effect.
+
+   If both strategies fail, the script logs the manual fix:
+   ```bash
+   # Inspect the GRUB menu structure:
+   awk -F"'" '/menuentry|submenu/ {print NR": "$2}' /boot/grub/grub.cfg
+
+   # Find the line matching 6.17.0-20-generic, count its position inside
+   # the "Advanced options for Ubuntu" submenu (zero-indexed), then:
+   sudo sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT="1>N"/' /etc/default/grub
+   sudo update-grub
+   ```
+5. Runs `apt-mark hold` on `linux-image-generic`, `linux-headers-generic`, `linux-generic` so future `apt upgrade` won't replace your kernel with `-22+`.
+6. Tells you to reboot.
 
 After reboot, `uname -r` should report `6.17.0-20-generic`.
 
