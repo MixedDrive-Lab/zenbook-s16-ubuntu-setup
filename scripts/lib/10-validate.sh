@@ -107,8 +107,32 @@ cmd_check "go"      go
 cmd_check "java"    java
 cmd_check "ruby"    ruby
 cmd_check "php"     php
+cmd_check "elixir"  elixir
+cmd_check "erl (Erlang)" erl
 cmd_check "gfortran" gfortran
 cmd_check "mise"    mise
+cmd_check "rustup"  rustup
+cmd_check "composer" composer
+cmd_check "rails"   rails
+cmd_check "uv (Astral)" uv
+
+hdr "mise default languages (--with-mise-defaults)"
+if command -v mise &>/dev/null; then
+    mise_pinned=$(mise ls --installed 2>/dev/null || mise ls 2>/dev/null || true)
+    if [[ -n "$mise_pinned" ]]; then
+        for lang in node python go java ruby erlang elixir; do
+            if echo "$mise_pinned" | grep -qE "^$lang\b"; then
+                ok "mise has $lang installed"
+            else
+                miss "mise does NOT have $lang installed"
+            fi
+        done
+    else
+        miss "mise installed but no tools — run --with-mise-defaults"
+    fi
+else
+    miss "mise not installed — run Section 05"
+fi
 
 hdr "Container"
 cmd_check "docker"        docker

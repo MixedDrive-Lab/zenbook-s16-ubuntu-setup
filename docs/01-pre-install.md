@@ -12,8 +12,8 @@ This guide assumes you're starting from scratch (factory Windows or empty SSD). 
 ## 1. Download Ubuntu 24.04 LTS
 
 ```bash
-wget https://releases.ubuntu.com/24.04/ubuntu-24.04.1-desktop-amd64.iso
-sha256sum ubuntu-24.04.1-desktop-amd64.iso
+wget https://releases.ubuntu.com/24.04/ubuntu-24.04.4-desktop-amd64.iso
+sha256sum ubuntu-24.04.4-desktop-amd64.iso
 # Compare against https://releases.ubuntu.com/24.04/SHA256SUMS
 ```
 
@@ -28,7 +28,7 @@ The official Ubuntu installer's recommendation is `balenaEtcher`, but `dd` works
 lsblk
 
 # Write (DOUBLE-CHECK the device — wrong target = data loss)
-sudo dd if=ubuntu-24.04.1-desktop-amd64.iso of=/dev/sdX bs=4M status=progress conv=fsync
+sudo dd if=ubuntu-24.04.4-desktop-amd64.iso of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
 ## 3. BIOS / UEFI settings

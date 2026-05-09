@@ -6,6 +6,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-05-09
+
+### Added
+
+- **`--with-mise-defaults`** flag (Section 12, opt-in) for bulk-installing 8 default language toolchains:
+  - **mise-managed** (`mise use --global`):
+    - Node.js (`lts`)
+    - **Python: `3.12` (default), `3.13`, `latest` — three versions side-by-side.** Default `python` resolves to 3.12 for broad SLAM/CV ecosystem compat (OpenCV bindings, Open3D, ORB-SLAM3 wrappers stable on 3.12). Per-project override via `.mise.toml`.
+    - Go (`latest`)
+    - **Java: `21` (LTS default), `latest` — two versions side-by-side.** Default `java` resolves to 21 for broadest ecosystem support.
+    - Ruby (`latest`) + `gem install rails --no-document` + `idiomatic_version_file_enable_tools` for `.ruby-version` detection
+    - Erlang (`latest` — builds OTP from source, ~15-30 min on Zenbook S16)
+    - Elixir (`latest`, depends on Erlang, Hex installed via `mix local.hex --force`)
+  - **apt-managed**: PHP + extensions (`php-{curl,apcu,intl,mbstring,opcache,pgsql,mysql,sqlite3,redis,xml,zip}`) + Composer downloaded to `/usr/local/bin/composer`
+  - **pip-managed (in mise's default Python)**: **`uv` (Astral)** — modern Python package + venv manager (`uv venv`, `uv pip`, `uv add`, `uv run`); replaces `python -m venv` + `pip` + `pip-tools` workflow, ~30x faster than pip for cold installs
+  - **rustup-managed** (outside mise): Rust via canonical `rustup-init` from `sh.rustup.rs`
+- New section `12` (`scripts/lib/12-mise-defaults.sh`, ~330 lines).
+- `--with-mise-defaults` flag and section `12` added to `setup.sh` argument parser, `_section_num`, single-section dispatch, and default flow execution.
+- Erlang build dependencies pre-installed via apt before triggering the OTP build (`autoconf m4 libncurses-dev libwxgtk3.2-dev libwxgtk-webview3.2-dev libgl1-mesa-dev libglu1-mesa-dev libpng-dev libssh-dev unixodbc-dev xsltproc fop libxml2-utils`).
+- `zenbook-validate` expanded:
+  - Languages section adds checks for `elixir`, `erl` (Erlang), `rustup`, `composer`, `rails`, `uv`
+  - New "mise default languages" block: queries `mise ls` and reports per-language status (node, python, go, java, ruby, erlang, elixir)
+
+### Documentation
+
+- `docs/04-dev-toolchain.md` — "Adding languages" rewritten to document both paths (manual `mise use` vs Section 12 bulk), with full caveats table per language. New "Python multi-version workflow + `uv`" section showing how to switch between 3.12/3.13/latest per project via `.mise.toml`, plus `uv` workflow examples (`uv venv`, `uv add`, `uv sync`, `uv run`).
+- `README.md` — compatibility table includes `--with-mise-defaults` row, section IDs reference includes `12`.
+
+### Notes
+
+- `--all` shortcut intentionally does **not** include `--with-mise-defaults`. Reasons: 15-30 min Erlang OTP build + heavy Rails dep tree + ~600 MB extra disk for 3 Python versions.
+- Section 12 is **idempotent**: re-runs check `mise ls` per language and skip already-installed tools. Same for `rustup` (re-running `-y` updates), apt-installed PHP, and `uv` (pip detects existing install).
+- Rust install via rustup lives outside mise's PATH ordering — cargo/rustc resolved from `~/.cargo/bin/` (rustup adds it to `~/.bashrc` and `~/.profile`).
+- `uv` installed via `mise x python -- python -m pip install --user uv` lands in `~/.local/bin/uv` (Ubuntu adds this to `$PATH` via `~/.profile`). Open a fresh terminal after Section 12 for `uv` to be visible.
+
 ## [0.2.0] — 2026-05-09
 
 ### Added

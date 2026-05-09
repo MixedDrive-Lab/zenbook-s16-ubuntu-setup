@@ -21,6 +21,9 @@
 #   08  Flatpak apps (media + comms + productivity) — opt-in
 #   09  Gaming (Steam + ProtonUp-Qt) — opt-in
 #   10  Validation script generation (always runs)
+#   11a XRT NPU prep (amdgpu-install + ROCm + groups, pre-reboot) — opt-in
+#   11b XRT NPU install (XRT debs + verify, post-reboot) — opt-in
+#   12  mise default languages (Python/Node/Go/Java/Ruby/Erlang/Elixir/PHP/Rust) — opt-in
 # ============================================================================
 
 # Resolve the directory containing this script, then the lib/ folder
@@ -54,6 +57,8 @@ source "$LIB_DIR/09-gaming.sh"
 source "$LIB_DIR/11a-xrt-prep.sh"
 # shellcheck source=lib/11b-xrt-install.sh
 source "$LIB_DIR/11b-xrt-install.sh"
+# shellcheck source=lib/12-mise-defaults.sh
+source "$LIB_DIR/12-mise-defaults.sh"
 # shellcheck source=lib/10-validate.sh
 source "$LIB_DIR/10-validate.sh"
 
@@ -77,6 +82,7 @@ WITH_APPS=0
 WITH_FLATPAK=0
 WITH_GAMING=0
 WITH_XRT=0
+WITH_MISE_DEFAULTS=0
 SECTION=""
 
 usage() {
@@ -100,10 +106,15 @@ OPTIONS:
                          11b runs after reboot.
     --xrt-bundle-dir DIR Override location of XRT bundle (default
                          ~/Downloads/xrt-bundle). Same as XRT_BUNDLE_DIR env.
+    --with-mise-defaults Install 8 default languages (Section 12):
+                         Python, Node, Go, Java via mise; Ruby + Rails;
+                         Erlang + Elixir via mise (Erlang ~15-30 min build);
+                         PHP via apt + Composer; Rust via rustup.
+                         See docs/04-dev-toolchain.md for caveats.
     --all                Shortcut for --with-ai-stack --with-apps
                          --with-flatpak --with-gaming. Does NOT include
-                         --with-xrt (opt-in only).
-    --section N          Run only section N (01–10, 11a, 11b)
+                         --with-xrt or --with-mise-defaults (opt-in only).
+    --section N          Run only section N (01–10, 11a, 11b, 12)
     -h, --help           Show this help
 
 ENVIRONMENT OVERRIDES:
@@ -116,7 +127,7 @@ EXAMPLES:
     # Minimal install (sections 01–05)
     ./scripts/setup.sh
 
-    # Full install (excluding XRT — opt-in only)
+    # Full install (excluding XRT and mise defaults — opt-in only)
     ./scripts/setup.sh --all
 
     # Just verify kernel + GPU stack
@@ -129,6 +140,9 @@ EXAMPLES:
     ./scripts/setup.sh --with-xrt              # runs 11a, banner reboot
     sudo reboot
     ./scripts/setup.sh --with-xrt              # detects 11a done, runs 11b
+
+    # Install all 8 default languages via mise (long-running due to Erlang)
+    ./scripts/setup.sh --with-mise-defaults
 EOF
 }
 
@@ -148,6 +162,7 @@ while [[ $# -gt 0 ]]; do
             fi
             export XRT_BUNDLE_DIR="$1"
             ;;
+        --with-mise-defaults) WITH_MISE_DEFAULTS=1 ;;
         --all)
             WITH_AI_STACK=1; WITH_APPS=1; WITH_FLATPAK=1; WITH_GAMING=1 ;;
         --section)
@@ -193,6 +208,7 @@ _section_num() {
         10)   echo "10" ;;
         11a) echo "11a" ;;
         11b) echo "11b" ;;
+        12)   echo "12" ;;
         *)    echo "" ;;
     esac
 }
@@ -212,8 +228,9 @@ if [[ -n "$SECTION" ]]; then
         10) run_section_10_validate ;;
         11a) run_section_11a_xrt_prep ;;
         11b) run_section_11b_xrt_install ;;
+        12) run_section_12_mise_defaults ;;
         *)
-            error "Invalid section: $SECTION (valid: 01-10, 11a, 11b)"
+            error "Invalid section: $SECTION (valid: 01-10, 11a, 11b, 12)"
             exit 1
             ;;
     esac
@@ -238,6 +255,8 @@ else
             run_section_11a_xrt_prep || warn "Section 11a (XRT prep) had errors"
         fi
     fi
+
+    [[ "$WITH_MISE_DEFAULTS" == "1" ]] && { run_section_12_mise_defaults || warn "Section 12 (mise defaults) had errors"; }
 fi
 
 log "============================================"

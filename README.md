@@ -1,8 +1,16 @@
 # zenbook-s16-ubuntu-setup
 
-Battle-tested Ubuntu 24.04 LTS setup for the **ASUS Zenbook S16 (UM5606)** with **AMD Ryzen AI 9 HX 370** (Strix Point). Pins kernel `6.17.0-20` for `amdxdna` NPU compatibility, then installs a sane developer baseline plus opt-in extras.
+> Battle-tested Ubuntu 24.04 LTS setup for ASUS Zenbook S16 (UM5606) with AMD Ryzen AI 9 HX 370. Kernel 6.17.0-20 pinned for amdxdna NPU compatibility. Auto-setup script + manual walkthrough.
 
-> **Status:** alpha (`v0.1.0`). Tested on a single Zenbook S16 UM5606HA. PRs welcome — see `.github/ISSUE_TEMPLATE/hardware_compat.md` if you have a different revision.
+[![License: MIT](https://camo.githubusercontent.com/fdf2982b9f5d7489dcf44570e714e3a15fce6253e0cc6b5aa61a075aac2ff71b/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f4c6963656e73652d4d49542d79656c6c6f772e737667)](https://opensource.org/licenses/MIT) [![Ubuntu](https://camo.githubusercontent.com/b93b8202d2b5859f39a6f71b5f3d130488d6ab260b606cf5c59e7c5facb177b9/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f5562756e74752d32342e30342532304c54532d4539353432303f6c6f676f3d7562756e7475266c6f676f436f6c6f723d7768697465)](https://releases.ubuntu.com/24.04/) [![Hardware](https://camo.githubusercontent.com/ce280271e2b052df21b6f5536254a60d1a3d5fbd55ae926a1a8180ebd75d5468/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f48617264776172652d5a656e626f6f6b2532305331362d626c7565)](https://github.com/MixedDrive-Lab/zenbook-s16-ubuntu-setup/blob/v0.1.2)
+
+------
+
+## What This Is
+
+This repository contains the development environment setup used at [MixedDrive Lab](https://mixeddrivelab.org/) on the primary research workstation: **ASUS Zenbook S16 (UM5606)** with **AMD Ryzen AI 9 HX 370** and **32 GB RAM**, running **Ubuntu 24.04.4 LTS** (Wayland).
+
+> **Status:** alpha (`v0.2.1`). Tested on a single Zenbook S16 UM5606HA. PRs welcome — see `.github/ISSUE_TEMPLATE/hardware_compat.md` if you have a different revision.
 
 ## What this gives you
 
@@ -18,6 +26,7 @@ Battle-tested Ubuntu 24.04 LTS setup for the **ASUS Zenbook S16 (UM5606)** with 
 | Flatpak apps | `--with-flatpak` | OnlyOffice, Obsidian, Audacity, GIMP, Pinta, VLC, HandBrake, Kdenlive, Spotify, Discord, Zoom |
 | Gaming | `--with-gaming` | Steam + ProtonUp-Qt |
 | AMD XRT NPU stack | `--with-xrt` | ROCm + XRT runtime + XDNA plugin (two-phase install with reboot in between, requires user-provided EULA-gated .deb files — see [`docs/09-xrt-stack.md`](docs/09-xrt-stack.md)) |
+| mise default languages | `--with-mise-defaults` | Bulk-install 8 languages: Python/Node/Go/Java/Ruby (+Rails)/Erlang/Elixir via mise; PHP via apt + Composer; Rust via rustup. Erlang OTP build ~15-30 min. See [`docs/04-dev-toolchain.md`](docs/04-dev-toolchain.md) for caveats. |
 
 All sections are **idempotent** — re-running is safe.
 
@@ -77,7 +86,7 @@ See [`docs/02-kernel-pinning.md`](docs/02-kernel-pinning.md) for the full story 
 ./scripts/validate.sh
 ```
 
-Section IDs: `01` preflight, `02` kernel pin, `03` apt base, `04` apt extended, `05` dev toolchain, `06` ai stack, `07` apps, `08` flatpak, `09` gaming, `10` validation, `11a` xrt prep, `11b` xrt install.
+Section IDs: `01` preflight, `02` kernel pin, `03` apt base, `04` apt extended, `05` dev toolchain, `06` ai stack, `07` apps, `08` flatpak, `09` gaming, `10` validation, `11a` xrt prep, `11b` xrt install, `12` mise default languages.
 
 ## Repository layout
 
