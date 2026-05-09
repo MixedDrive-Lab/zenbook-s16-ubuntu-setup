@@ -3,8 +3,13 @@
 # Section 09 — Gaming stack (optional, --with-gaming)
 #
 # Installs:
-#   * Steam (apt, multiverse repo)
+#   * Steam (apt, multiverse repo + i386 architecture)
 #   * ProtonUp-Qt (Flatpak) — manage GE-Proton versions
+#
+# Note: Steam Linux requires:
+#   - `multiverse` repo enabled (steam-installer is in multiverse)
+#   - i386 architecture enabled (steam-libs-i386 dependency)
+# Both are configured automatically before `apt install`.
 #
 # After install, manually:
 #   1. Open Steam → log in
@@ -19,9 +24,25 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 run_section_09_gaming() {
     log "=== Section 09: Gaming stack (Steam + ProtonUp-Qt) ==="
 
-    # Enable multiverse for Steam
+    # Steam needs:
+    #   1. multiverse repo enabled (for steam-installer)
+    #   2. i386 (32-bit) architecture enabled (for steam-libs-i386 dep)
+    # Both must be in place BEFORE apt install steam-installer.
+
     if [[ "$DRY_RUN" != "true" ]]; then
+        # Enable multiverse
         sudo add-apt-repository -y multiverse >>"$LOG_FILE" 2>&1 || true
+
+        # Enable i386 architecture (idempotent)
+        if ! dpkg --print-foreign-architectures | grep -qx i386; then
+            log "Adding i386 architecture for Steam 32-bit libraries..."
+            sudo dpkg --add-architecture i386 >>"$LOG_FILE" 2>&1
+        else
+            success "i386 architecture already enabled"
+        fi
+
+        # Refresh package lists with multiverse + i386 in place
+        sudo apt update >>"$LOG_FILE" 2>&1
     fi
 
     apt_install steam-installer

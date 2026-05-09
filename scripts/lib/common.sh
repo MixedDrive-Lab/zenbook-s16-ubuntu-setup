@@ -131,7 +131,8 @@ flatpak_install() {
         warn "flatpak not installed, skipping $label"
         return 1
     fi
-    if flatpak list --app 2>/dev/null | awk '{print $2}' | grep -qx "$app_id"; then
+    # Use --columns=application for reliable parsing across locale + flatpak versions
+    if flatpak list --app --columns=application 2>/dev/null | grep -qx "$app_id"; then
         success "$label already installed"
         return 0
     fi

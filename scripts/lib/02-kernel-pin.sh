@@ -99,9 +99,53 @@ _hold_kernel_packages() {
 
 _set_default_boot() {
     if [[ "$DRY_RUN" == "true" ]]; then
-        log "[DRY-RUN] update-grub"
+        log "[DRY-RUN] update-grub + set GRUB default to ${TARGET_KERNEL}-generic"
         return 0
     fi
+
+    # Configure GRUB to remember the last boot — this way, after the user
+    # manually picks 6.17.0-20-generic once, it sticks.
+    if [[ -f /etc/default/grub ]]; then
+        # Set GRUB_DEFAULT=saved + GRUB_SAVEDEFAULT=true (idempotent)
+        if ! grep -q '^GRUB_DEFAULT=saved' /etc/default/grub; then
+            sudo sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT=saved/' /etc/default/grub
+        fi
+        if ! grep -q '^GRUB_SAVEDEFAULT=' /etc/default/grub; then
+            echo 'GRUB_SAVEDEFAULT=true' | sudo tee -a /etc/default/grub >/dev/null
+        else
+            sudo sed -i 's/^GRUB_SAVEDEFAULT=.*/GRUB_SAVEDEFAULT=true/' /etc/default/grub
+        fi
+        success "/etc/default/grub configured: GRUB_DEFAULT=saved, GRUB_SAVEDEFAULT=true"
+    fi
+
     log "Updating GRUB so the held kernel is bootable..."
     sudo update-grub >>"$LOG_FILE" 2>&1 || warn "update-grub returned non-zero"
+
+    # Try to find the menuentry id for 6.17.0-20-generic and set it as the
+    # next-boot default.
+    local entry
+    entry=$(awk -F"'" -v k="${TARGET_KERNEL}-generic" '
+        /^submenu / { sub_id = $2 }
+        /^[[:space:]]*menuentry / && index($0, k) {
+            id = $2
+            if (sub_id != "") {
+                print sub_id ">" id
+            } else {
+                print id
+            }
+            exit
+        }' /boot/grub/grub.cfg 2>/dev/null)
+
+    if [[ -n "$entry" ]]; then
+        if sudo grub-set-default "$entry" >>"$LOG_FILE" 2>&1; then
+            success "GRUB default set to: $entry"
+            success "Next boot will use ${TARGET_KERNEL}-generic"
+        else
+            warn "grub-set-default failed for entry: $entry"
+            warn "Fall back to picking ${TARGET_KERNEL}-generic manually at the boot menu"
+        fi
+    else
+        warn "Could not locate menuentry for ${TARGET_KERNEL}-generic in /boot/grub/grub.cfg"
+        warn "On boot, hold Shift to enter GRUB menu and pick 'Advanced options' → ${TARGET_KERNEL}-generic"
+    fi
 }

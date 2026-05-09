@@ -62,22 +62,29 @@ newgrp docker
 
 ## Cursor won't launch
 
-**Symptom:** clicking Cursor.AppImage does nothing, or you see `dlopen(): error loading libfuse.so.2`.
+**Symptom:** `cursor` command not found, or GUI launches with errors.
 
 **Fix:**
 
 ```bash
-# Make sure libfuse2 is installed (Section 06 should have done this)
-sudo apt install -y libfuse2
+# Verify install
+which cursor
+dpkg -l cursor
 
-# Make sure the AppImage is executable
-chmod +x ~/Applications/Cursor.AppImage
+# If missing, ensure apt repo is configured
+ls /etc/apt/sources.list.d/cursor.list
+sudo apt update
+sudo apt install cursor
 
 # Try launching from terminal to see errors
-~/Applications/Cursor.AppImage
+cursor
+
+# If launches but blank window: usually a Wayland/EGL issue, try:
+cursor --disable-gpu
+# or set ELECTRON_OZONE_PLATFORM_HINT=auto in your shell
 ```
 
-If you see `--no-sandbox` warnings, that's expected on Wayland for unsigned AppImages. The .desktop entry created by the script already passes `--no-sandbox`.
+If you'd rather use the legacy AppImage (e.g. Cursor team retires the apt repo), grab it from cursor.com directly. The script no longer ships AppImage handling because the apt repo is now upstream-supported.
 
 ## `claude` CLI uses API instead of Pro/Max subscription
 

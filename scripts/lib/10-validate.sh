@@ -38,7 +38,9 @@ cmd_check() {
 
 flatpak_check() {
     local app_id="$1"
-    if flatpak list --app 2>/dev/null | awk '{print $2}' | grep -qx "$app_id"; then
+    # Use --columns=application to get just the App ID column reliably,
+    # regardless of locale, flatpak version, or app name word count.
+    if flatpak list --app --columns=application 2>/dev/null | grep -qx "$app_id"; then
         ok "$app_id"
     else
         miss "$app_id"
@@ -115,7 +117,7 @@ if command -v docker &>/dev/null; then
 fi
 
 hdr "AI stack (--with-ai-stack)"
-[[ -f "$HOME/Applications/Cursor.AppImage" ]] && ok "Cursor AppImage" || miss "Cursor AppImage"
+cmd_check "cursor"           cursor
 cmd_check "warp-terminal" warp-terminal
 cmd_check "claude (Claude Code CLI)" claude
 
@@ -153,12 +155,29 @@ fi
 
 hdr "Gaming (--with-gaming)"
 cmd_check "steam" steam
+if dpkg --print-foreign-architectures 2>/dev/null | grep -qx i386; then
+    ok "i386 architecture enabled (Steam-ready)"
+else
+    miss "i386 architecture NOT enabled (Steam will fail to install — run: sudo dpkg --add-architecture i386 && sudo apt update)"
+fi
 
 hdr "Kernel hold status"
 if apt-mark showhold 2>/dev/null | grep -q "^linux-image-generic"; then
     ok "linux-image-generic is held (good — won't auto-upgrade past 6.17.0-20)"
 else
     miss "linux-image-generic NOT held — apt-get upgrade may break amdxdna"
+fi
+# Cross-check that we're actually booted on the held kernel
+if [[ "$(uname -r)" == "6.17.0-20-generic" ]]; then
+    ok "Currently booted on 6.17.0-20-generic"
+else
+    miss "Booted on $(uname -r) — expected 6.17.0-20-generic. Reboot and pick the right kernel."
+fi
+# GRUB default config check
+if [[ -f /etc/default/grub ]] && grep -q '^GRUB_DEFAULT=saved' /etc/default/grub; then
+    ok "GRUB configured with GRUB_DEFAULT=saved (last-booted kernel sticks)"
+else
+    miss "GRUB_DEFAULT not 'saved' — next kernel install may shift default boot away from 6.17.0-20"
 fi
 
 hdr "Storage"

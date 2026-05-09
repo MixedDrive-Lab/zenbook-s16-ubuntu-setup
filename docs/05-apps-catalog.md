@@ -17,7 +17,7 @@ After install, sign in:
 
 ```bash
 # Cursor: launches GUI flow
-~/Applications/Cursor.AppImage
+cursor
 
 # Claude Code: triggers browser auth
 claude login
@@ -74,9 +74,8 @@ sudo apt remove 1password google-chrome-stable typora ulauncher localsend
 # Standalone binaries
 sudo rm /usr/local/bin/{lazygit,lazydocker,gum}
 
-# Cursor AppImage
-rm "$HOME/Applications/Cursor.AppImage"
-rm "$HOME/.local/share/applications/cursor.desktop"
+# Cursor (apt-installed)
+sudo apt remove cursor
 
 # Claude Code CLI
 sudo npm uninstall -g @anthropic-ai/claude-code

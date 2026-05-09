@@ -3,7 +3,7 @@
 # Section 06 — AI stack (optional, --with-ai-stack)
 #
 # Installs:
-#   * Cursor (AppImage)
+#   * Cursor (apt repo at downloads.cursor.com/aptrepo)
 #   * Warp Terminal (.deb)
 #   * Node.js 22 LTS (NodeSource repo) — needed by Claude Code CLI
 #   * Claude Code CLI (npm global)
@@ -33,41 +33,46 @@ run_section_06_ai_stack() {
 }
 
 _install_cursor() {
-    local cursor_dir="$HOME/Applications"
-    local cursor_path="$cursor_dir/Cursor.AppImage"
-
-    if [[ -f "$cursor_path" ]]; then
-        success "Cursor AppImage already present at $cursor_path"
+    if command -v cursor &>/dev/null; then
+        success "Cursor already installed: $(cursor --version 2>/dev/null | head -1 || echo 'present')"
         return 0
     fi
 
-    log "Downloading Cursor AppImage..."
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log "[DRY-RUN] download Cursor.AppImage"
-        return 0
-    fi
-
-    ensure_dir "$cursor_dir"
-    if curl -fsSL "https://download.cursor.sh/linux/appImage/x64" -o "$cursor_path"; then
-        chmod +x "$cursor_path"
-        success "Cursor installed at $cursor_path"
-
-        # Create a .desktop entry
-        ensure_dir "$HOME/.local/share/applications"
-        cat > "$HOME/.local/share/applications/cursor.desktop" <<EOF
-[Desktop Entry]
-Name=Cursor
-Comment=AI-first code editor
-Exec=${cursor_path} --no-sandbox %F
-Icon=cursor
-Terminal=false
-Type=Application
-Categories=Development;TextEditor;
-EOF
-        success "Cursor .desktop entry created"
+    # Cursor migrated from AppImage download to an official APT repo.
+    # If the repo is already present (Cursor team auto-set it up for some users),
+    # skip the key+repo dance and jump straight to apt install.
+    if [[ ! -f /etc/apt/sources.list.d/cursor.list ]] \
+       && [[ ! -f /etc/apt/sources.list.d/cursor.sources ]]; then
+        log "Adding Cursor APT repository..."
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log "[DRY-RUN] would add Cursor apt repo"
+        else
+            sudo install -m 0755 -d /etc/apt/keyrings
+            if ! curl -fsSL https://downloads.cursor.com/aptrepo/public.gpg.key \
+                | sudo gpg --dearmor -o /etc/apt/keyrings/cursor.gpg 2>/dev/null; then
+                error "Cursor GPG key download failed"
+                return 1
+            fi
+            sudo chmod a+r /etc/apt/keyrings/cursor.gpg
+            echo "deb [signed-by=/etc/apt/keyrings/cursor.gpg arch=amd64] https://downloads.cursor.com/aptrepo stable main" \
+                | sudo tee /etc/apt/sources.list.d/cursor.list >/dev/null
+            sudo apt update >>"$LOG_FILE" 2>&1
+        fi
     else
-        error "Cursor download failed"
-        rm -f "$cursor_path"
+        success "Cursor APT repo already configured"
+        # Make sure cache reflects what's there
+        if [[ "$DRY_RUN" != "true" ]]; then
+            sudo apt update >>"$LOG_FILE" 2>&1
+        fi
+    fi
+
+    log "Installing Cursor via apt..."
+    apt_install cursor
+
+    # Sanity: confirm binary present
+    if [[ "$DRY_RUN" != "true" ]] && ! command -v cursor &>/dev/null; then
+        warn "Cursor apt install reported success but 'cursor' binary not in PATH."
+        warn "Try: which cursor; dpkg -L cursor | grep bin"
     fi
 }
 
