@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.8] — 2026-05-10
+
+### Added
+
+- **`nvtop`** added to Section 03 apt install. Despite the name, nvtop supports AMD/Intel/NVIDIA/Apple/Qualcomm GPUs — works fine on Strix Point's Radeon 890M. Better choice than `radeontop` (newer, supports per-process GPU usage, real-time graphs, multi-GPU). Complements `btop` (which has GPU monitoring disabled — see v0.3.7) by being the dedicated GPU monitor.
+
+  Use:
+  - `btop`   → CPU / RAM / disk / network
+  - `nvtop`  → GPU utilization, memory, processes, clocks/temps
+
 ## [0.3.7] — 2026-05-10
 
 ### Fixed

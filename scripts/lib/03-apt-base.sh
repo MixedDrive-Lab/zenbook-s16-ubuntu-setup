@@ -34,7 +34,7 @@ run_section_03_apt_base() {
 
     log "Installing terminal QoL tools..."
     apt_install \
-        htop btop tmux tree ncdu \
+        htop btop nvtop tmux tree ncdu \
         ripgrep fd-find bat jq direnv fzf zsh \
         eza zoxide plocate apache2-utils tldr \
         gir1.2-gtop-2.0 gir1.2-clutter-1.0
