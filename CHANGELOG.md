@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-05-10
+
+### Fixed
+
+- **Section 02: `_set_default_boot` failed silently because `/boot/grub/grub.cfg` is mode 0600 root:root on Ubuntu 22.04+** (was 0644 in older releases — changed for [CVE-2022-2601](https://access.redhat.com/security/cve/cve-2022-2601) and related grub2 hardening). The script's awk parsers were running as the unprivileged user, getting "permission denied", swallowing the error via `2>/dev/null`, and reporting empty results — making all three GRUB strategies (title / menuentry-id / position) fail. v0.3.1's banner correctly handled the silent failure but didn't fix the root cause.
+
+  Fix: snapshot `/boot/grub/grub.cfg` once via `sudo cat` into a temp file at the start of `_set_default_boot`, then run all three awk strategies against the readable snapshot. Sudo creds are already cached from preflight, so no extra prompt. Snapshot cleaned up via `trap RETURN`.
+
+### Changed
+
+- **More permissive awk regex** in all three GRUB strategies. Patterns updated:
+  - `/^submenu /` → `/^[[:space:]]*submenu[[:space:]]+/`
+  - `/^[[:space:]]*menuentry /` → `/^[[:space:]]*menuentry[[:space:]]+/`
+
+  Now tolerates leading whitespace (in case Ubuntu's `update-grub` ever emits an indented top-level submenu) and accepts tab as separator (not just space). User's actual grub.cfg used a regular space, but defensive against future variants.
+
+- **Debug logging when a strategy fails.** Each of the three strategies now logs its intermediate values (`sub_title`, `menu_title`, `sub_id`, `menu_id`, etc) before falling through to the next strategy. Makes future remote debugging much faster.
+
 ## [0.3.1] — 2026-05-10
 
 ### Fixed

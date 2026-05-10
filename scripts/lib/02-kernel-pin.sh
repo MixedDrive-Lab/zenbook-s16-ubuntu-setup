@@ -144,15 +144,31 @@ _set_default_boot() {
     # awk -F"'" splits on single-quotes; on a typical Ubuntu line like:
     #   menuentry 'Ubuntu, with Linux 6.17.0-20-generic' --class ... $menuentry_id_option 'gnulinux-...-advanced-UUID' {
     # field 2 is the visible label, field 4 is the menuentry id.
+    #
+    # NOTE: /boot/grub/grub.cfg is mode 0600 root:root on Ubuntu 22.04+ (was
+    # 0644 in older releases). We MUST use sudo to read it. Sudo creds are
+    # cached from preflight so this won't re-prompt.
+    #
+    # We snapshot the file once into a temp readable location to avoid invoking
+    # sudo three times for three strategies (slower + multiple log lines).
+    local grub_cfg_snapshot
+    grub_cfg_snapshot=$(mktemp)
+    sudo cat /boot/grub/grub.cfg > "$grub_cfg_snapshot" 2>/dev/null || {
+        rm -f "$grub_cfg_snapshot"
+        error "Cannot read /boot/grub/grub.cfg even with sudo — aborting GRUB default config"
+        return 1
+    }
+    # Cleanup on function exit (any return path)
+    trap 'rm -f "$grub_cfg_snapshot"' RETURN
 
     # --- Strategy A: title-based ---
     local sub_title menu_title
-    sub_title=$(awk -F"'" '/^submenu / { print $2; exit }' /boot/grub/grub.cfg 2>/dev/null)
+    sub_title=$(awk -F"'" '/^[[:space:]]*submenu[[:space:]]+/ { print $2; exit }' "$grub_cfg_snapshot")
     menu_title=$(awk -F"'" -v k="$target_kernel_full" '
-        /^[[:space:]]*menuentry / && index($0, k) && !/recovery mode/ {
+        /^[[:space:]]*menuentry[[:space:]]+/ && index($0, k) && !/recovery mode/ {
             print $2
             exit
-        }' /boot/grub/grub.cfg 2>/dev/null)
+        }' "$grub_cfg_snapshot")
 
     if [[ -n "$sub_title" ]] && [[ -n "$menu_title" ]]; then
         target_default="${sub_title}>${menu_title}"
@@ -160,24 +176,28 @@ _set_default_boot() {
     elif [[ -n "$menu_title" ]]; then
         target_default="$menu_title"
         log "Resolved GRUB title (no submenu): $target_default"
+    else
+        log "Strategy A debug: sub_title='$sub_title' menu_title='$menu_title'"
     fi
 
     # --- Strategy B: menuentry id ---
     if [[ -z "$target_default" ]]; then
         warn "Title-based GRUB_DEFAULT failed — trying menuentry-id fallback"
         local sub_id menu_id
-        sub_id=$(awk -F"'" '/^submenu / { print $4; exit }' /boot/grub/grub.cfg 2>/dev/null)
+        sub_id=$(awk -F"'" '/^[[:space:]]*submenu[[:space:]]+/ { print $4; exit }' "$grub_cfg_snapshot")
         menu_id=$(awk -F"'" -v k="$target_kernel_full" '
-            /^[[:space:]]*menuentry / && index($0, k) && !/recovery mode/ {
+            /^[[:space:]]*menuentry[[:space:]]+/ && index($0, k) && !/recovery mode/ {
                 print $4
                 exit
-            }' /boot/grub/grub.cfg 2>/dev/null)
+            }' "$grub_cfg_snapshot")
         if [[ -n "$sub_id" ]] && [[ -n "$menu_id" ]]; then
             target_default="${sub_id}>${menu_id}"
             log "Resolved menuentry id: $target_default"
         elif [[ -n "$menu_id" ]]; then
             target_default="$menu_id"
             log "Resolved menuentry id (no submenu): $target_default"
+        else
+            log "Strategy B debug: sub_id='$sub_id' menu_id='$menu_id'"
         fi
     fi
 
@@ -187,18 +207,20 @@ _set_default_boot() {
         local pos
         pos=$(awk -F"'" -v k="$target_kernel_full" '
             BEGIN { in_sub = 0; idx = -1 }
-            /^submenu /         { in_sub = 1; idx = -1; next }
-            /^}/                { if (in_sub) in_sub = 0; next }
-            in_sub && /menuentry / {
+            /^[[:space:]]*submenu[[:space:]]+/  { in_sub = 1; idx = -1; next }
+            /^}/                                 { if (in_sub) in_sub = 0; next }
+            in_sub && /^[[:space:]]*menuentry[[:space:]]+/ {
                 idx++
                 if (index($0, k) && !/recovery mode/) {
                     print idx
                     exit
                 }
-            }' /boot/grub/grub.cfg 2>/dev/null)
+            }' "$grub_cfg_snapshot")
         if [[ -n "$pos" ]]; then
             target_default="1>${pos}"
             log "Position-based fallback: $target_default"
+        else
+            log "Strategy C debug: position scan found no match"
         fi
     fi
 
