@@ -53,8 +53,12 @@ run_section_01_preflight() {
     fi
     success "Sudo available"
 
-    # Internet
-    if curl -fsSL --max-time 5 https://archive.ubuntu.com/ -o /dev/null 2>&1; then
+    # Internet — skip in dry-run (curl may not exist yet on a fresh system,
+    # and bootstrap_minimal_deps already installed it for real if missing).
+    if [[ "$DRY_RUN" == "true" ]]; then
+        success "Internet check skipped (dry-run)"
+    elif command -v curl >/dev/null 2>&1 \
+        && curl -fsSL --max-time 5 https://archive.ubuntu.com/ -o /dev/null 2>&1; then
         success "Internet reachable"
     else
         error "Cannot reach archive.ubuntu.com — check your network"

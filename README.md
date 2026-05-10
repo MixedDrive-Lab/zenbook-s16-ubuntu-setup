@@ -2,7 +2,7 @@
 
 > Battle-tested Ubuntu 24.04 LTS setup for ASUS Zenbook S16 (UM5606) with AMD Ryzen AI 9 HX 370. Kernel 6.17.0-20 pinned for amdxdna NPU compatibility. Auto-setup script + manual walkthrough.
 
-[![License: MIT](https://camo.githubusercontent.com/fdf2982b9f5d7489dcf44570e714e3a15fce6253e0cc6b5aa61a075aac2ff71b/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f4c6963656e73652d4d49542d79656c6c6f772e737667)](https://opensource.org/licenses/MIT) [![Ubuntu](https://camo.githubusercontent.com/b93b8202d2b5859f39a6f71b5f3d130488d6ab260b606cf5c59e7c5facb177b9/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f5562756e74752d32342e30342532304c54532d4539353432303f6c6f676f3d7562756e7475266c6f676f436f6c6f723d7768697465)](https://releases.ubuntu.com/24.04/) [![Hardware](https://camo.githubusercontent.com/ce280271e2b052df21b6f5536254a60d1a3d5fbd55ae926a1a8180ebd75d5468/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f48617264776172652d5a656e626f6f6b2532305331362d626c7565)](https://github.com/MixedDrive-Lab/zenbook-s16-ubuntu-setup/blob/v0.1.2)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/24.04/) [![Hardware](https://img.shields.io/badge/Hardware-Zenbook%20S16-blue)](https://github.com/MixedDrive-Lab/zenbook-s16-ubuntu-setup) [![Version](https://img.shields.io/badge/version-v0.3.0-brightgreen)](https://github.com/MixedDrive-Lab/zenbook-s16-ubuntu-setup/releases)
 
 ------
 
@@ -10,25 +10,19 @@
 
 This repository contains the development environment setup used at [MixedDrive Lab](https://mixeddrivelab.org/) on the primary research workstation: **ASUS Zenbook S16 (UM5606)** with **AMD Ryzen AI 9 HX 370** and **32 GB RAM**, running **Ubuntu 24.04.4 LTS** (Wayland).
 
-> **Status:** alpha (`v0.2.1`). Tested on a single Zenbook S16 UM5606HA. PRs welcome — see `.github/ISSUE_TEMPLATE/hardware_compat.md` if you have a different revision.
+> **Status:** alpha (`v0.3.0`). Tested on a single Zenbook S16 UM5606HA. PRs welcome — see `.github/ISSUE_TEMPLATE/hardware_compat.md` if you have a different revision.
 
 ## What this gives you
 
-| Layer | Default | Description |
-|---|:-:|---|
-| Pre-flight checks | ✅ | Verifies Ubuntu 24.04, amd64, sudo, internet, disk space, hardware ID |
-| Kernel pin (`6.17.0-20`) | ✅ | Avoids the `amdxdna_drm_open: SVA bind device failed, ret -95` regression on kernels ≥ 6.17.0-22 |
-| Base APT packages | ✅ | `build-essential`, common dev libs, terminal QoL (`ripgrep`, `eza`, `zoxide`, `fzf`, `bat`, `fd-find`, etc), GitHub CLI, Flatpak runtime |
-| Extended APT | ✅ | Runtime libs (Ruby/Python/Postgres deps), full Vulkan/Mesa stack (Steam-ready), `thermald`, `lm-sensors`, `stress-ng`, `gfortran`, SLAM dev libs (`libeigen3-dev`, `libopencv-dev`, `libceres-dev`) |
-| Dev toolchain | ✅ | [`mise`](https://mise.jdx.dev) version manager, Docker CE + Compose v2 |
-| AI stack | `--with-ai-stack` | Cursor, Warp Terminal, Node.js 22, Claude Code CLI |
-| Apps stack | `--with-apps` | 1Password, Google Chrome, LocalSend, Typora, Gum, LazyGit, LazyDocker, Ulauncher |
-| Flatpak apps | `--with-flatpak` | OnlyOffice, Obsidian, Audacity, GIMP, Pinta, VLC, HandBrake, Kdenlive, Spotify, Discord, Zoom |
-| Gaming | `--with-gaming` | Steam + ProtonUp-Qt |
-| AMD XRT NPU stack | `--with-xrt` | ROCm + XRT runtime + XDNA plugin (two-phase install with reboot in between, requires user-provided EULA-gated .deb files — see [`docs/09-xrt-stack.md`](docs/09-xrt-stack.md)) |
-| mise default languages | `--with-mise-defaults` | Bulk-install 8 languages: Python/Node/Go/Java/Ruby (+Rails)/Erlang/Elixir via mise; PHP via apt + Composer; Rust via rustup. Erlang OTP build ~15-30 min. See [`docs/04-dev-toolchain.md`](docs/04-dev-toolchain.md) for caveats. |
+A **three-stage installer** with reboots aligned to natural hardware events. Each stage is a single command — no flag soup. All sections are **idempotent**, so re-running any stage is safe.
 
-All sections are **idempotent** — re-running is safe.
+| Stage | Sections | What you get | Followed by |
+|:-:|---|---|---|
+| **A** | 01 preflight, 02 kernel-pin | Verifies the system, installs + holds kernel `6.17.0-20-generic` (NPU compat) | 🔄 Reboot to activate kernel |
+| **B** | 03–09 + 11a | All APT packages (base + dev libs + Vulkan/Mesa + Ruby/Python deps), `mise` + Docker, AI stack (Cursor/Warp/Node 22/Claude Code), apps (1Password/Chrome/LocalSend/Typora/LazyGit/LazyDocker/etc), Flatpak apps (Obsidian/VLC/Spotify/Discord/etc), Steam + ProtonUp-Qt, **and** AMD XRT NPU prep (ROCm + render/video groups) | 🔄 Reboot to activate group membership |
+| **C** | 11b + 12 + 10 | XRT NPU runtime + 4 EULA-gated `.deb` files installed, 8 default languages via mise (Python/Node/Go/Java/Ruby+Rails/Erlang/Elixir/PHP/Rust — note: Erlang OTP build ~15–30 min), and `zenbook-validate` script generated | ✅ Run `zenbook-validate` |
+
+**XRT NPU bundle** (Stage B / C): the 4 XRT `.deb` files are EULA-gated and cannot be auto-downloaded. Stage A prints a heads-up so you can fetch them from [AMD Ryzen AI Software](https://www.amd.com/en/developer/resources/ryzen-ai-software.html) while the machine reboots. If the bundle is missing when Stage B runs, sec 11a is silently skipped (re-run with `--section 11a` once the bundle is in place). See [`docs/09-xrt-stack.md`](docs/09-xrt-stack.md).
 
 ## Quick start
 
@@ -37,23 +31,35 @@ All sections are **idempotent** — re-running is safe.
 git clone https://github.com/MixedDrive-Lab/zenbook-s16-ubuntu-setup.git
 cd zenbook-s16-ubuntu-setup
 
-# 2. Preview what will happen (no changes made)
-./scripts/setup.sh --dry-run --all
+# 2. (Optional) Preview Stage B without changes
+./scripts/setup.sh --dry-run --stage B
 
-# 3. Minimal install (sections 01–05: kernel + base + dev toolchain only)
-./scripts/setup.sh
-
-# 4. Or full install
-./scripts/setup.sh --all
-
-# 5. Reboot to switch to kernel 6.17.0-20-generic
+# 3. Stage A — preflight + kernel pin
+./scripts/setup.sh --stage A
 sudo reboot
 
-# 6. Verify post-reboot
+# 4. Stage B — apt + apps + steam + XRT prep
+./scripts/setup.sh --stage B
+sudo reboot
+
+# 5. Stage C — XRT install + mise default languages + validate gen
+./scripts/setup.sh --stage C
+
+# 6. Verify
 zenbook-validate
 ```
 
+**Skip the long Erlang OTP build** in Stage C:
+```bash
+ZENBOOK_SKIP_MISE_DEFAULTS=1 ./scripts/setup.sh --stage C
+```
+
 A timestamped log lands at `~/.cache/zenbook-s16-setup/setup-YYYYMMDD-HHMMSS.log`.
+
+For all options:
+```bash
+./scripts/setup.sh --help
+```
 
 ## Why kernel `6.17.0-20`?
 
@@ -73,7 +79,9 @@ sudo apt-mark unhold linux-image-generic linux-headers-generic linux-generic
 
 See [`docs/02-kernel-pinning.md`](docs/02-kernel-pinning.md) for the full story + manual fallback steps if `6.17.0-20` is no longer in the apt archive.
 
-## Running specific sections
+## Running a single section (escape hatch)
+
+For re-runs after a fix, or to install just one thing:
 
 ```bash
 # Just the kernel pin
@@ -82,11 +90,14 @@ See [`docs/02-kernel-pinning.md`](docs/02-kernel-pinning.md) for the full story 
 # Just the dev toolchain (mise + Docker)
 ./scripts/setup.sh --section 05
 
+# Just XRT prep — e.g. after you finally got the EULA-gated bundle
+./scripts/setup.sh --section 11a
+
 # Just regenerate the validation script
 ./scripts/validate.sh
 ```
 
-Section IDs: `01` preflight, `02` kernel pin, `03` apt base, `04` apt extended, `05` dev toolchain, `06` ai stack, `07` apps, `08` flatpak, `09` gaming, `10` validation, `11a` xrt prep, `11b` xrt install, `12` mise default languages.
+Section IDs: `01` preflight · `02` kernel pin · `03` apt base · `04` apt extended · `05` dev toolchain · `06` ai stack · `07` apps · `08` flatpak · `09` gaming · `10` validation · `11a` xrt prep · `11b` xrt install · `12` mise default languages.
 
 ## Repository layout
 

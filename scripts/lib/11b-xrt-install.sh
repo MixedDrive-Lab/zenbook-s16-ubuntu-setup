@@ -31,6 +31,13 @@ run_section_11b_xrt_install() {
         return 0
     fi
 
+    # Stage C calls 11b unconditionally; if 11a never ran (no bundle yet), skip silently.
+    if [[ "${XRT_SKIP_IF_BUNDLE_MISSING:-0}" == "1" ]] && [[ ! -f "$XRT_PREP_STATE_FILE" ]]; then
+        warn "Section 11a not completed (no XRT bundle?) — skipping Section 11b"
+        warn "  Once you have the bundle: ./scripts/setup.sh --section 11a, reboot, then --section 11b"
+        return 0
+    fi
+
     _xrtb_pre_checks || return 1
     _xrtb_install_xrt_debs || return 1
     _xrtb_setup_bashrc || return 1

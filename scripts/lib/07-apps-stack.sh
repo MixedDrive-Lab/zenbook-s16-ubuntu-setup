@@ -79,6 +79,10 @@ _install_localsend() {
         success "LocalSend already installed"
         return 0
     fi
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "[DRY-RUN] download + install LocalSend latest .deb"
+        return 0
+    fi
     log "Installing LocalSend (LAN file transfer)..."
     local version
     version="$(gh_latest_tag localsend/localsend)"
@@ -119,16 +123,16 @@ _install_lazygit() {
         success "LazyGit already installed"
         return 0
     fi
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "[DRY-RUN] download + install lazygit (latest)"
+        return 0
+    fi
     log "Installing LazyGit..."
     local version
     version="$(gh_latest_tag jesseduffield/lazygit)"
     if [[ -z "$version" ]]; then
         warn "Could not fetch latest LazyGit version, skipping"
         return 1
-    fi
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log "[DRY-RUN] download + install lazygit ${version}"
-        return 0
     fi
     local tmp_tar
     tmp_tar=$(mktemp --suffix=.tar.gz)
@@ -150,16 +154,16 @@ _install_lazydocker() {
         success "LazyDocker already installed"
         return 0
     fi
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "[DRY-RUN] download + install lazydocker (latest)"
+        return 0
+    fi
     log "Installing LazyDocker..."
     local version
     version="$(gh_latest_tag jesseduffield/lazydocker)"
     if [[ -z "$version" ]]; then
         warn "Could not fetch latest LazyDocker version, skipping"
         return 1
-    fi
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log "[DRY-RUN] download + install lazydocker ${version}"
-        return 0
     fi
     local tmp_tar
     tmp_tar=$(mktemp --suffix=.tar.gz)

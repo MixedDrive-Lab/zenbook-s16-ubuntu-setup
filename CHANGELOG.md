@@ -6,6 +6,57 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-05-10
+
+### Added
+
+- **Three-stage installer (`--stage A|B|C`)** — opinionated bundle entry points aligned to natural reboot points. Each stage is a single command; no flag soup.
+  - **Stage A** = sec 01–02 (preflight + kernel pin) → reboot.
+  - **Stage B** = sec 03–09 + 11a (apt/apps/steam + XRT prep) → reboot.
+  - **Stage C** = sec 11b + 12 + 10 (XRT install + mise default langs + validate gen).
+- New file `scripts/lib/stages.sh` (~150 lines) implementing `_run_stage_A/B/C`.
+- **ASCII banner system** (`print_banner` in `common.sh`) shown at end of each stage. Includes a figlet "MIXEDDRIVE LAB" header + box border (color via `COLOR_BLUE`, respects `NO_COLOR`). Banner content adapts to runtime conditions (e.g. "REBOOT NOW" vs "no reboot needed" depending on whether the new kernel is already booted).
+- **Bootstrap of `curl + ca-certificates + gnupg`** at the top of `setup.sh` via new `bootstrap_minimal_deps` helper. Always runs (even in `--dry-run`), since these are dry-run prerequisites.
+- **Stage A heads-up about XRT bundle** — printed in the post-stage-A banner so the user can download the EULA-gated AMD `.deb` files while the machine reboots.
+- **Graceful skip of XRT prep (sec 11a) in Stage B** when the bundle is missing. Controlled by new env var `XRT_SKIP_IF_BUNDLE_MISSING=1` (set by Stage B/C runners; manual `--section 11a` still hard-fails as before).
+- **Graceful skip of XRT install (sec 11b) in Stage C** when the prep marker is absent (i.e. user never ran 11a / has no bundle).
+- **`ZENBOOK_SKIP_MISE_DEFAULTS=1`** env var to skip the long Erlang OTP build in Stage C while keeping the rest.
+- `--help` added to `scripts/validate.sh`.
+
+### Changed
+
+- **`README.md` quick start** rewritten around the 3-stage flow. Old "All sections" table replaced with a 3-row stage table.
+- **`scripts/setup.sh`** rewritten around `--stage` / `--section` argument parsing.
+- **Mutual exclusion** between `--stage` and `--section`. Either is required (no implicit "default flow" — explicit only).
+- Version badge bumped `v0.2.1` → `v0.3.0` in README. (Old badges were re-encoded camo URLs; switched back to direct shields.io URLs for easier updates.)
+
+### Removed
+
+- **BREAKING:** `--all` flag removed.
+- **BREAKING:** `--with-ai-stack`, `--with-apps`, `--with-flatpak`, `--with-gaming`, `--with-xrt`, `--with-mise-defaults` flags all removed. Their functionality is now bundled into the 3 stages.
+- The implicit "minimal install if no flags" default flow (sections 01–05) is gone — `setup.sh` now requires either `--stage` or `--section`.
+
+### Fixed
+
+- **`--dry-run` no longer fails on a fresh Ubuntu install** where `curl` is missing. Bootstrap installs `curl + ca-certificates + gnupg` for real (even in dry-run mode), since `curl` is needed by `gh_latest_tag`, the preflight internet check, and most repo helpers.
+- **`gh_latest_tag`** now returns a placeholder `"0.0.0-dryrun"` when `DRY_RUN=true` instead of calling out to api.github.com. This unblocks `--dry-run --section 07` (LocalSend / LazyGit / LazyDocker installers) on systems with no network.
+- **`scripts/lib/01-preflight.sh`** internet check now skipped under `--dry-run` (was emitting misleading "Cannot reach archive.ubuntu.com" when the real cause was missing `curl`).
+- **`scripts/lib/07-apps-stack.sh`** — moved `[[ DRY_RUN == true ]] && return 0` above the `gh_latest_tag` call in `_install_localsend`, `_install_lazygit`, `_install_lazydocker`. Previously they would still hit the network in dry-run.
+
+### Migration notes
+
+If you have a script or doc that calls `./scripts/setup.sh --all` (or any `--with-*`), replace it with the relevant stage:
+
+| Old | New |
+|---|---|
+| `./scripts/setup.sh` (no args) | `./scripts/setup.sh --stage A` then B, then C |
+| `./scripts/setup.sh --all` | `--stage A` → reboot → `--stage B` → reboot → `--stage C` |
+| `./scripts/setup.sh --with-xrt` | covered by Stage B (prep) + Stage C (install) |
+| `./scripts/setup.sh --with-mise-defaults` | covered by Stage C (or `--section 12`) |
+| `./scripts/setup.sh --dry-run --all` | `--dry-run --stage A` (or B / C) |
+
+For granular re-runs, `--section NN` is unchanged.
+
 ## [0.2.2] — 2026-05-09
 
 ### Fixed

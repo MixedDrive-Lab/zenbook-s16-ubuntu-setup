@@ -204,9 +204,113 @@ install_deb() {
 
 # Get the latest GitHub release tag for owner/repo (semver, no leading 'v').
 # Usage: gh_latest_tag owner/repo
+# In dry-run mode, returns a placeholder so callers don't need network access.
 gh_latest_tag() {
     local repo="$1"
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "0.0.0-dryrun"
+        return 0
+    fi
     curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null \
         | grep -Po '"tag_name":\s*"v?\K[^"]*' \
         | head -1
+}
+
+# ----------------------------------------------------------------------------
+# Bootstrap: ensure curl + ca-certificates + gnupg are present.
+# Even --dry-run needs these (preflight uses curl, repo helpers use gnupg).
+# Idempotent + safe to call multiple times.
+# ----------------------------------------------------------------------------
+bootstrap_minimal_deps() {
+    # Skip on non-apt systems — preflight will catch the OS mismatch later
+    # with a clearer error. Lets `--help` / arg parsing still work on macOS,
+    # CI containers, etc.
+    if ! command -v apt-get >/dev/null 2>&1; then
+        log "Bootstrap skipped (no apt-get; preflight will report the OS mismatch)"
+        return 0
+    fi
+    local need=()
+    command -v curl >/dev/null 2>&1 || need+=(curl)
+    command -v gpg  >/dev/null 2>&1 || need+=(gnupg)
+    # ca-certificates: check via dpkg (the cert path varies across distros)
+    dpkg -l ca-certificates 2>/dev/null | grep -q "^ii" || need+=(ca-certificates)
+    if [[ ${#need[@]} -eq 0 ]]; then
+        return 0
+    fi
+    log "Bootstrapping minimal deps (needed even for --dry-run): ${need[*]}"
+    if [[ "$DRY_RUN" == "true" ]]; then
+        # Even in dry-run, install these — they're prerequisites for dry-run itself.
+        log "(installing for real — these are dry-run prerequisites)"
+    fi
+    if ! sudo -n true 2>/dev/null; then
+        log "Sudo password required to bootstrap minimal deps"
+        sudo -v || { error "Sudo authentication failed"; return 1; }
+    fi
+    sudo apt-get update -qq >>"$LOG_FILE" 2>&1 || warn "apt-get update returned non-zero"
+    sudo apt-get install -y "${need[@]}" >>"$LOG_FILE" 2>&1 || {
+        error "Failed to install bootstrap deps: ${need[*]}"
+        return 1
+    }
+    success "Bootstrap deps installed: ${need[*]}"
+}
+
+# ----------------------------------------------------------------------------
+# ASCII banner — prints a box-bordered banner with MixedDrive Lab branding.
+# Usage:
+#   print_banner "TITLE LINE"  "subtitle line 1"  "subtitle line 2" ...
+# Width is fixed at 76 columns. ASCII-only inside (locale-safe padding).
+# Long lines are truncated.
+# ----------------------------------------------------------------------------
+print_banner() {
+    local title="$1"; shift
+    local lines=("$@")
+    local W=76
+    local hr=""
+    local i
+    # Unicode horizontal bar (display width 1). Borders are written directly
+    # to stdout, never used in padding math, so locale doesn't matter here.
+    for ((i=0; i<W-2; i++)); do hr+="═"; done
+    # MixedDrive Lab figlet (font: small) — 49 wide, 4 tall, "LAB" appended on
+    # the last line only.
+    local logo=(
+        " __  __ _____  _____ ___  ___  ___ _____   _____      "
+        "|  \\/  |_ _\\ \\/ / __|   \\|   \\| _ \\_ _\\ \\ / / __|     "
+        "| |\\/| || | >  <| _|| |) | |) |   /| | \\ V /| _|      "
+        "|_|  |_|___/_/\\_\\___|___/|___/|_|_\\___| \\_/ |___|  LAB"
+    )
+    echo
+    printf "%b╔%s╗%b\n" "${COLOR_BLUE}" "$hr" "${COLOR_NC}"
+    _banner_line ""
+    local l
+    for l in "${logo[@]}"; do
+        _banner_line "  $l"
+    done
+    _banner_line ""
+    _banner_line "  $title"
+    _banner_line ""
+    for l in "${lines[@]}"; do
+        _banner_line "  $l"
+    done
+    _banner_line ""
+    printf "%b╚%s╝%b\n" "${COLOR_BLUE}" "$hr" "${COLOR_NC}"
+    echo
+}
+
+_banner_line() {
+    local text="$1"
+    local W=76
+    # Visible length: bash ${#str} counts bytes under POSIX locale and chars
+    # under UTF-8. To stay safe, we keep banner content ASCII-only (caller's
+    # responsibility). Use byte length here.
+    local len=${#text}
+    if (( len > W - 2 )); then
+        text="${text:0:W-2}"
+        len=$((W-2))
+    fi
+    local pad=$((W - 2 - len))
+    local fill=""
+    local i
+    for ((i=0; i<pad; i++)); do fill+=" "; done
+    printf "%b║%b%s%s%b║%b\n" \
+        "${COLOR_BLUE}" "${COLOR_NC}" "$text" "$fill" "${COLOR_BLUE}" "${COLOR_NC}"
 }

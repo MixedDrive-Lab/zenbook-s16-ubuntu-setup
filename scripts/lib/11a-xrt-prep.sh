@@ -45,7 +45,16 @@ run_section_11a_xrt_prep() {
     fi
 
     _xrt_pre_checks || return 1
-    _xrt_locate_bundle || return 1
+    if ! _xrt_locate_bundle; then
+        # When called from Stage B (XRT_SKIP_IF_BUNDLE_MISSING=1), missing bundle
+        # is not a hard failure — Stage B is opinionated "include all if available".
+        # Re-run --section 11a manually after the user downloads the bundle.
+        if [[ "${XRT_SKIP_IF_BUNDLE_MISSING:-0}" == "1" ]]; then
+            warn "XRT bundle missing — skipping Section 11a (re-run --section 11a after download)"
+            return 0
+        fi
+        return 1
+    fi
     _xrt_install_amdgpu_install || return 1
     _xrt_run_amdgpu_install || return 1
     _xrt_add_user_groups || return 1
