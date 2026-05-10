@@ -410,13 +410,21 @@ _xrt_run_amdgpu_install() {
         return 0
     fi
 
+    # --allow-downgrades is needed because v0.3.4's auto-repair updated legacy
+    # AMD repo URLs from amdgpu/7.2.2 → amdgpu/30.30.x. Some pre-installed
+    # packages from the older 7.x channel end up with newer metadata pointing
+    # to slightly older binary versions than what's installed → apt refuses to
+    # proceed without --allow-downgrades.
+    #
+    # --accept-eula is kept for forward compat with future driver components
+    # that re-introduce EULA gating; harmless on builds that ignore it.
     log "Running amdgpu-install --usecase=rocm,hiplibsdk --no-dkms (this can take 5-15 min)..."
     if [[ "$DRY_RUN" == "true" ]]; then
-        log "[DRY-RUN] sudo amdgpu-install -y --accept-eula --usecase=rocm,hiplibsdk --no-dkms"
+        log "[DRY-RUN] sudo amdgpu-install -y --accept-eula --allow-downgrades --usecase=rocm,hiplibsdk --no-dkms"
         return 0
     fi
 
-    if sudo amdgpu-install -y --accept-eula \
+    if sudo amdgpu-install -y --accept-eula --allow-downgrades \
         --usecase=rocm,hiplibsdk --no-dkms >>"$LOG_FILE" 2>&1; then
         success "amdgpu-install completed (ROCm + HIP SDK installed, kernel module skipped)"
     else

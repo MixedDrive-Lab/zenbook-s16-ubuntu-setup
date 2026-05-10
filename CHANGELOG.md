@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.10] — 2026-05-10
+
+### Fixed
+
+- **Section 11a: `amdgpu-install` failed on the first Stage B run** because of a missing `--allow-downgrades` flag. v0.3.4's AMD-repo auto-repair updates URLs from `amdgpu/7.2.2/...` → `amdgpu/30.30.x/...`; some pre-installed packages from the older 7.x channel end up needing version downgrades to align with the new repo metadata. Apt refuses downgrades by default → `_xrt_run_amdgpu_install` exited non-zero.
+
+  New invocation:
+  ```bash
+  sudo amdgpu-install -y --accept-eula --allow-downgrades --usecase=rocm,hiplibsdk --no-dkms
+  ```
+
+  Reported by user: Stage B failed at sec 11a even after re-running. Manual `cd ~/Downloads/xrt-bundle && sudo amdgpu-install --usecase=rocm,hiplibsdk --no-dkms` worked (interactively typing `y` to the downgrade prompts).
+
+  Workaround for users on v0.3.9 or earlier:
+  ```bash
+  sudo amdgpu-install -y --accept-eula --allow-downgrades --usecase=rocm,hiplibsdk --no-dkms
+  ```
+
 ## [0.3.9] — 2026-05-10
 
 ### Fixed
