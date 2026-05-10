@@ -7,10 +7,12 @@
 #
 # Steps:
 #   1. Pre-checks: 11a was completed, render+video groups now active
-#   2. Install 4 XRT .deb files (--fix-broken handles missing deps)
-#   3. Add `source /opt/xilinx/xrt/setup.sh` to ~/.bashrc (idempotent)
-#   4. Configure /etc/security/limits.d for memlock unlimited (per AMD docs)
-#   5. Verify install: xrt-smi examine
+#   2. Install 4 XRT .deb files in a single apt transaction
+#   3. Verify DKMS amdxdna built; add modprobe override so DKMS wins over
+#      the Linux 6.17 in-kernel stub; reload module live
+#   4. Add `source /opt/xilinx/xrt/setup.sh` to ~/.bashrc (idempotent, silent)
+#   5. Configure /etc/security/limits.d for memlock unlimited (per AMD docs)
+#   6. Verify install: xrt-smi examine
 # ============================================================================
 
 # shellcheck source=common.sh
@@ -40,6 +42,7 @@ run_section_11b_xrt_install() {
 
     _xrtb_pre_checks || return 1
     _xrtb_install_xrt_debs || return 1
+    _xrtb_ensure_dkms_amdxdna || warn "DKMS amdxdna setup had issues — xrt-smi validate gemm/throughput may fail (try reboot)"
     _xrtb_setup_bashrc || return 1
     _xrtb_setup_memlock || return 1
     _xrtb_verify || return 1
@@ -98,7 +101,14 @@ _xrtb_pre_checks() {
 }
 
 _xrtb_install_xrt_debs() {
-    # Install order matters: base → base-dev → npu → plugin
+    # Install order matters: base → base-dev → npu → plugin. We pass them all
+    # to a SINGLE `apt install` call: apt resolves cross-deps within the
+    # transaction (correct order auto-determined). This matches what works
+    # reliably when users do `sudo dpkg -i *.deb` manually.
+    #
+    # Per-file `apt install` (the old approach) sometimes failed because each
+    # invocation tried to satisfy the next deb's deps before the previous deb
+    # finished registering — cross-package symbols / postinst order issues.
     local install_order=(
         "xrt_*_24.04-amd64-base.deb"
         "xrt_*_24.04-amd64-base-dev.deb"
@@ -106,6 +116,8 @@ _xrtb_install_xrt_debs() {
         "xrt_plugin*amdxdna.deb"
     )
 
+    local debs=()
+    local pattern
     for pattern in "${install_order[@]}"; do
         local deb
         deb=$(compgen -G "$XRT_BUNDLE_DIR/$pattern" | head -1)
@@ -113,22 +125,132 @@ _xrtb_install_xrt_debs() {
             error "Missing .deb matching pattern: $pattern"
             return 1
         fi
-
-        log "Installing $(basename "$deb")..."
-        if [[ "$DRY_RUN" == "true" ]]; then
-            log "[DRY-RUN] sudo apt install --fix-broken -y $deb"
-            continue
-        fi
-
-        if sudo apt install --fix-broken -y "$deb" >>"$LOG_FILE" 2>&1; then
-            success "Installed: $(basename "$deb")"
-        else
-            error "Install failed for: $(basename "$deb")"
-            error "  Try manually: sudo apt install --fix-broken -y $deb"
-            return 1
-        fi
+        debs+=("$deb")
+        log "  resolved: $(basename "$deb")"
     done
 
+    log "Installing 4 XRT .deb files in a single apt transaction..."
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "[DRY-RUN] sudo apt install --fix-broken -y ${debs[*]}"
+        return 0
+    fi
+
+    if sudo apt install --fix-broken -y "${debs[@]}" >>"$LOG_FILE" 2>&1; then
+        success "Installed all 4 XRT .deb files"
+    else
+        error "XRT install failed. Check $LOG_FILE for the apt output."
+        error "  Try manually: sudo apt install --fix-broken -y ${debs[*]}"
+        return 1
+    fi
+    return 0
+}
+
+# ----------------------------------------------------------------------------
+# Verify the DKMS amdxdna module built successfully AND is the one actually
+# loaded — not the older "in-kernel" stub that ships with linux-modules-6.17.
+#
+# Why this matters: Linux 6.17 mainline ships an amdxdna driver at
+# /lib/modules/<kernel>/kernel/drivers/accel/amdxdna/amdxdna.ko version
+# 0.0.0. It opens the device fine and supports basic ioctls (`xrt-smi
+# examine` works, latency test passes), but lacks the HWCTX configurations
+# the gemm and throughput validate tests need. Result: `xrt-smi validate`
+# shows two FAILED tests with `DRM_IOCTL_AMDXDNA_CONFIG_HWCTX IOCTL failed
+# (err=-95): Operation not supported`.
+#
+# The xrt_plugin*amdxdna.deb ships a DKMS-built amdxdna with the full
+# feature set. We need to:
+#   1. Confirm DKMS xrt-driver is registered and built for the running kernel
+#   2. Add a modprobe `override` rule so the DKMS version wins over in-kernel
+#   3. update-initramfs so the rule is honored at early boot
+#   4. Unload + reload amdxdna so the change takes effect without reboot
+# ----------------------------------------------------------------------------
+_xrtb_ensure_dkms_amdxdna() {
+    local rule_file="/etc/modprobe.d/zenbook-s16-amdxdna-dkms.conf"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "[DRY-RUN] would verify DKMS amdxdna build + add modprobe override + reload"
+        return 0
+    fi
+
+    if ! command -v dkms &>/dev/null; then
+        warn "dkms command not found — cannot verify DKMS amdxdna build"
+        return 0
+    fi
+
+    # 1. Confirm DKMS registered xrt-driver (or any xdna-flavored module)
+    local dkms_match
+    dkms_match=$(dkms status 2>/dev/null | grep -iE "xrt|xdna" || true)
+    if [[ -z "$dkms_match" ]]; then
+        warn "No DKMS xrt/xdna entry found — xrt_plugin*amdxdna.deb postinst may have failed"
+        warn "  Inspect: sudo cat /var/lib/dkms/*/build/make.log | tail"
+        return 1
+    fi
+    log "DKMS amdxdna registered: $dkms_match"
+
+    # 2. Confirm a built .ko exists under /lib/modules/<kernel>/updates/
+    local kver dkms_ko
+    kver=$(uname -r)
+    dkms_ko=$(sudo find "/lib/modules/${kver}/updates" -name "amdxdna.ko*" 2>/dev/null | head -1)
+    if [[ -z "$dkms_ko" ]]; then
+        log "DKMS amdxdna not built for $kver yet — running dkms autoinstall..."
+        sudo dkms autoinstall -k "$kver" >>"$LOG_FILE" 2>&1 \
+            || warn "dkms autoinstall returned non-zero"
+        dkms_ko=$(sudo find "/lib/modules/${kver}/updates" -name "amdxdna.ko*" 2>/dev/null | head -1)
+        if [[ -z "$dkms_ko" ]]; then
+            error "DKMS amdxdna build failed for $kver"
+            error "  Check: sudo cat /var/lib/dkms/*/build/make.log | tail"
+            return 1
+        fi
+    fi
+    success "DKMS amdxdna built at: $dkms_ko"
+
+    # 3. Add modprobe override rule (DKMS wins over in-kernel on next boot)
+    if [[ ! -f "$rule_file" ]]; then
+        log "Writing modprobe override: prefer DKMS amdxdna over in-kernel"
+        sudo tee "$rule_file" >/dev/null <<'EOF'
+# Generated by zenbook-s16-ubuntu-setup (Section 11b)
+#
+# Linux 6.17 mainline ships amdxdna 0.0.0 at:
+#   /lib/modules/<kernel>/kernel/drivers/accel/amdxdna/amdxdna.ko
+# That stub driver supports basic ioctls only. The full-feature DKMS build
+# from xrt_plugin*amdxdna.deb (needed for HWCTX configs, gemm, throughput)
+# lives at:
+#   /lib/modules/<kernel>/updates/dkms/amdxdna.ko
+# This `override` rule tells modprobe to load the `updates` one preferentially.
+override amdxdna * updates
+EOF
+        sudo update-initramfs -u >>"$LOG_FILE" 2>&1 \
+            || warn "update-initramfs returned non-zero"
+        success "modprobe override rule added at $rule_file"
+    else
+        log "modprobe override rule already in place at $rule_file"
+    fi
+
+    # 4. Reload amdxdna live (avoids needing another reboot)
+    local loaded_path
+    if lsmod | grep -q "^amdxdna"; then
+        loaded_path=$(modinfo amdxdna 2>/dev/null | awk '/^filename:/ {print $2}')
+        if [[ "$loaded_path" == *"/updates/"* ]]; then
+            success "DKMS amdxdna already the loaded version ($loaded_path)"
+            return 0
+        fi
+        log "In-kernel amdxdna currently loaded ($loaded_path) — switching to DKMS"
+        if ! sudo modprobe -r amdxdna 2>>"$LOG_FILE"; then
+            warn "Failed to unload in-kernel amdxdna (device busy?). Reboot to apply override."
+            return 0
+        fi
+    fi
+    if sudo modprobe amdxdna 2>>"$LOG_FILE"; then
+        loaded_path=$(modinfo amdxdna 2>/dev/null | awk '/^filename:/ {print $2}')
+        if [[ "$loaded_path" == *"/updates/"* ]]; then
+            success "DKMS amdxdna now loaded: $loaded_path"
+        else
+            warn "amdxdna re-loaded but path is $loaded_path (expected /updates/...). Reboot recommended."
+        fi
+    else
+        warn "modprobe amdxdna failed after unload — try reboot"
+        return 1
+    fi
     return 0
 }
 

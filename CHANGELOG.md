@@ -6,6 +6,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.9] — 2026-05-10
+
+### Fixed
+
+- **`xrt-smi validate` shows 2 FAILED tests** (gemm + throughput, with `DRM_IOCTL_AMDXDNA_CONFIG_HWCTX IOCTL failed (err=-95): Operation not supported`) on a fresh Stage C run. **Latency test still passes** which made the issue easy to miss in `xrt-smi examine`. Reported by user; manually re-running `sudo dpkg -i ~/Downloads/xrt-bundle/*.deb` fixed it.
+
+  Root cause uncovered: Linux 6.17 mainline ships an `amdxdna` driver at `/lib/modules/<kernel>/kernel/drivers/accel/amdxdna/amdxdna.ko` version 0.0.0. That stub supports basic ioctls only — enough for device-open + latency, not enough for HWCTX configuration. The full-feature DKMS module from `xrt_plugin*amdxdna.deb` lives at `/lib/modules/<kernel>/updates/dkms/amdxdna.ko`, but Linux's modprobe loaded the in-kernel one first, so the validate tests went through the stub.
+
+  Two fixes in this release:
+
+  1. **Single-transaction `apt install` for the 4 XRT .deb files** in `_xrtb_install_xrt_debs`. Previously installed one-by-one (`apt install --fix-broken -y <one_file>` per loop iteration), which sometimes left cross-package symbol/postinst order issues. Now passes all 4 paths to a single `apt install` call — apt resolves cross-deps within the transaction, matching the manual `dpkg -i *.deb` approach that worked.
+
+  2. **New `_xrtb_ensure_dkms_amdxdna` step** runs right after the deb install:
+     - Verifies DKMS xrt/xdna entry registered (`dkms status`).
+     - Verifies a built `.ko` exists under `/lib/modules/<kernel>/updates/`. If not, force-rebuilds with `sudo dkms autoinstall -k <kernel>`.
+     - Drops `/etc/modprobe.d/zenbook-s16-amdxdna-dkms.conf` with `override amdxdna * updates` so the DKMS version wins over the in-kernel stub on every future boot.
+     - `update-initramfs -u` so the rule is honored at early boot.
+     - `modprobe -r amdxdna && modprobe amdxdna` to switch live without reboot.
+     - Verifies the now-loaded module path contains `/updates/`.
+
+  Workaround for users on v0.3.8 or earlier (without the auto-fix):
+  ```bash
+  sudo dpkg -i ~/Downloads/xrt-bundle/*.deb
+  sudo modprobe -r amdxdna && sudo modprobe amdxdna
+  sudo /opt/xilinx/xrt/bin/xrt-smi validate
+  ```
+
+### Changed
+
+- Section 11b doc-block + flow comments updated to reflect the new step ordering.
+
 ## [0.3.8] — 2026-05-10
 
 ### Added
