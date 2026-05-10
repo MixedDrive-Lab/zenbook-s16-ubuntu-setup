@@ -6,6 +6,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.4] — 2026-05-10
+
+### Added
+
+- **Auto-repair of stale AMD repo source entries in Section 11a** (`_xrt_repair_amd_repos` in `scripts/lib/11a-xrt-prep.sh`). Runs right after pre-checks, before any amdgpu-install action. Three classes of issue handled:
+
+  | Problem | Detection | Fix |
+  |---|---|---|
+  | Stale URL version | curl probe of `<URL>/dists/noble/InRelease` → 404 | Replace with latest valid version from `repo.radeon.com/<channel>/` directory listing |
+  | Deprecated `proprietary` component | grep `^deb .* noble proprietary` | Rewrite to `noble main` (AMD removed proprietary in mid-2024) |
+  | Missing `signed-by=` directive | grep `^deb https://repo.radeon.com/` (no `[...]`) | Insert `[arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg]` and download `rocm.gpg` if not present |
+
+  Idempotent — no-op on clean systems. Logs every change with before/after URLs for auditability.
+
+  Reported by user with legacy AMD repo files from a 2024-era amdgpu-install:
+  ```
+  /etc/apt/sources.list.d/amdgpu-proprietary.list:
+      deb https://repo.radeon.com/amdgpu/7.2.2/ubuntu noble proprietary
+  /etc/apt/sources.list.d/rocm.list:
+      deb [...] https://repo.radeon.com/graphics/7.2.2/ubuntu noble main
+  ```
+  Both URLs returned 404 because AMD migrated `amdgpu/` to `30.X.Y` versioning and skipped `graphics/7.2.2` (jumped 7.2.1 → 7.2.3). Plus the proprietary file lacked `signed-by=` so APT 24.04 hard-failed with `NO_PUBKEY 9386B48A1A693C5C`. The user had to run 4 rounds of manual sed before sec 11a would proceed.
+
+- **New helpers in `scripts/lib/11a-xrt-prep.sh`** supporting the auto-repair:
+  - `_xrt_url_works URL` — curl HEAD probe, returns 0 for HTTP 200.
+  - `_xrt_get_latest_amd_version <amdgpu|graphics>` — scrapes `repo.radeon.com/<channel>/` directory listing for the latest `X.Y.Z` directory.
+  - `_xrt_ensure_rocm_key` — downloads `https://repo.radeon.com/rocm/rocm.gpg.key` and dearmors to `/etc/apt/keyrings/rocm.gpg` if not already present (AMD signs all of rocm/, graphics/, and amdgpu/ with the same key).
+
+### Changed
+
+- **`_xrt_pre_checks` no longer warns** about "Existing amdgpu/rocm repo files detected — may conflict". Auto-repair handles it; the warning was just noise once we actually fix the conflicts.
+
 ## [0.3.3] — 2026-05-10
 
 ### Fixed

@@ -45,6 +45,7 @@ run_section_11a_xrt_prep() {
     fi
 
     _xrt_pre_checks || return 1
+    _xrt_repair_amd_repos || warn "AMD repo auto-repair had issues — proceeding (amdgpu-install may report errors)"
     if ! _xrt_locate_bundle; then
         # When called from Stage B (XRT_SKIP_IF_BUNDLE_MISSING=1), missing bundle
         # is not a hard failure — Stage B is opinionated "include all if available".
@@ -110,16 +111,173 @@ _xrt_pre_checks() {
         warn "Non-AMD CPU detected — amdgpu / ROCm install may fail."
     fi
 
-    # Check /etc/apt/sources.list.d for old amdgpu repo conflicts
+    # Existing AMD repo files: just inform; auto-repair runs as a separate step
+    # (_xrt_repair_amd_repos) right after pre-checks return.
     if compgen -G '/etc/apt/sources.list.d/amdgpu*.list' >/dev/null \
        || compgen -G '/etc/apt/sources.list.d/rocm*.list' >/dev/null; then
-        warn "Existing amdgpu/rocm repo files detected — may conflict with new install:"
+        log "Existing amdgpu/rocm repo files detected — auto-repair will run next:"
         ls /etc/apt/sources.list.d/amdgpu*.list /etc/apt/sources.list.d/rocm*.list 2>/dev/null \
-            | sed 's/^/    /' | tee -a "$LOG_FILE"
-        warn "Continue? Conflicts will surface during 'amdgpu-install' run."
+            | sed 's/^/    /' | tee -a "$LOG_FILE" >/dev/null
     fi
 
     [[ "$fatal" -eq 1 ]] && return 1
+    return 0
+}
+
+# ----------------------------------------------------------------------------
+# Auto-repair stale AMD repo source entries.
+#
+# Three classes of issue we fix (all caused by AMD's mid-2024 repo migration
+# combined with strict APT signing in Ubuntu 24.04):
+#   1. Stale URL versions — e.g. "amdgpu/7.2.2/ubuntu" returns 404 because AMD
+#      moved amdgpu/ to "30.X.Y" versioning. Same for graphics/ where 7.2.2
+#      was skipped.
+#   2. Deprecated `proprietary` component — AMD removed it; everything is in
+#      `main` now.
+#   3. Missing `signed-by=` directive — APT in Ubuntu 24.04 hard-fails on
+#      unsigned sources (was a warning before).
+#
+# Idempotent. Safe to run on clean systems (no-op).
+# ----------------------------------------------------------------------------
+_xrt_repair_amd_repos() {
+    log "Auto-repair: scanning AMD repo source files for stale entries..."
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "[DRY-RUN] would scan /etc/apt/sources.list.d/ and repair stale AMD URLs"
+        return 0
+    fi
+
+    # Find all files referencing repo.radeon.com/amdgpu or graphics
+    local repo_files=()
+    while IFS= read -r f; do
+        [[ -n "$f" ]] && repo_files+=("$f")
+    done < <(sudo grep -lE "repo\.radeon\.com/(amdgpu|graphics)" \
+                /etc/apt/sources.list.d/*.list \
+                /etc/apt/sources.list.d/*.sources 2>/dev/null || true)
+
+    if [[ ${#repo_files[@]} -eq 0 ]]; then
+        success "No pre-existing AMD repo files (clean state)"
+        return 0
+    fi
+
+    log "Auto-repair: scanning ${#repo_files[@]} file(s)"
+
+    local changes=0 needs_key=0
+    local f
+    for f in "${repo_files[@]}"; do
+        local before after
+        before=$(sudo cat "$f")
+        after="$before"
+
+        # 1. Stale amdgpu/X.Y.Z URLs (probe each unique URL with curl)
+        local url
+        for url in $(echo "$before" | grep -oE "https://repo\.radeon\.com/amdgpu/[0-9.]+/ubuntu" | sort -u); do
+            if ! _xrt_url_works "${url}/dists/noble/InRelease"; then
+                local latest
+                latest=$(_xrt_get_latest_amd_version amdgpu)
+                if [[ -n "$latest" ]]; then
+                    local new_url="https://repo.radeon.com/amdgpu/${latest}/ubuntu"
+                    log "  $f: stale URL $url → $new_url"
+                    after=$(echo "$after" | sed "s|$url|$new_url|g")
+                else
+                    warn "  $f: $url is stale but couldn't determine latest amdgpu version"
+                fi
+            fi
+        done
+
+        # 2. Stale graphics/X.Y.Z URLs (same dance)
+        for url in $(echo "$before" | grep -oE "https://repo\.radeon\.com/graphics/[0-9.]+/ubuntu" | sort -u); do
+            if ! _xrt_url_works "${url}/dists/noble/InRelease"; then
+                local latest
+                latest=$(_xrt_get_latest_amd_version graphics)
+                if [[ -n "$latest" ]]; then
+                    local new_url="https://repo.radeon.com/graphics/${latest}/ubuntu"
+                    log "  $f: stale URL $url → $new_url"
+                    after=$(echo "$after" | sed "s|$url|$new_url|g")
+                else
+                    warn "  $f: $url is stale but couldn't determine latest graphics version"
+                fi
+            fi
+        done
+
+        # 3. Deprecated `proprietary` component → `main`
+        if echo "$after" | grep -qE "^deb .*noble proprietary"; then
+            log "  $f: component 'proprietary' deprecated → switching to 'main'"
+            after=$(echo "$after" | sed -E 's|(^deb .*) noble proprietary|\1 noble main|g')
+        fi
+
+        # 4. Missing signed-by directive (APT 24.04 hard-fails)
+        if echo "$after" | grep -qE "^deb https://repo\.radeon\.com/"; then
+            log "  $f: missing [signed-by=...] → adding rocm.gpg directive"
+            after=$(echo "$after" | sed -E 's|^deb https://repo\.radeon\.com|deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com|g')
+            needs_key=1
+        fi
+
+        if [[ "$after" != "$before" ]]; then
+            echo "$after" | sudo tee "$f" >/dev/null
+            changes=$((changes + 1))
+        fi
+    done
+
+    if [[ "$needs_key" == "1" ]]; then
+        _xrt_ensure_rocm_key || {
+            error "Could not set up rocm.gpg key — repaired sources will fail to verify"
+            return 1
+        }
+    fi
+
+    if [[ "$changes" -gt 0 ]]; then
+        log "Auto-repair: modified $changes file(s). Refreshing apt cache..."
+        sudo apt update >>"$LOG_FILE" 2>&1 || warn "apt update returned non-zero after repair"
+        # Final check: any remaining hard errors on AMD sources?
+        if sudo apt update 2>&1 | grep -qE "(repo\.radeon\.com).*\b(Err|404|NO_PUBKEY)\b"; then
+            warn "AMD repos still report errors after repair — see: sudo apt update"
+            return 1
+        fi
+        success "Auto-repair: AMD repo files fixed and apt cache refreshed"
+    else
+        success "Auto-repair: all AMD repo files already valid (no changes)"
+    fi
+    return 0
+}
+
+# Probe a URL via curl HEAD; return 0 if HTTP 200, 1 otherwise.
+_xrt_url_works() {
+    local url="$1"
+    local code
+    code=$(curl -fsSL -o /dev/null --max-time 10 -w "%{http_code}" "$url" 2>/dev/null || echo "000")
+    [[ "$code" == "200" ]]
+}
+
+# Discover the latest valid version directory under repo.radeon.com/<channel>/.
+# Args: channel = "amdgpu" or "graphics"
+# Output: "30.30.3" / "7.2.3" / "" if discovery fails.
+_xrt_get_latest_amd_version() {
+    local channel="$1"
+    curl -fsSL --max-time 15 "https://repo.radeon.com/${channel}/" 2>/dev/null \
+        | grep -oE 'href="[0-9]+\.[0-9]+\.[0-9]+/"' \
+        | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' \
+        | sort -V \
+        | tail -1
+}
+
+# Make sure /etc/apt/keyrings/rocm.gpg exists (download if missing). AMD signs
+# all of rocm/, graphics/, and amdgpu/ with the same key — so this one keyring
+# satisfies all repaired sources.
+_xrt_ensure_rocm_key() {
+    if [[ -f /etc/apt/keyrings/rocm.gpg ]]; then
+        log "  rocm.gpg keyring already present"
+        return 0
+    fi
+    log "  Downloading AMD GPG key → /etc/apt/keyrings/rocm.gpg"
+    sudo install -m 0755 -d /etc/apt/keyrings
+    if ! curl -fsSL --max-time 15 https://repo.radeon.com/rocm/rocm.gpg.key \
+        | sudo gpg --dearmor --yes -o /etc/apt/keyrings/rocm.gpg 2>/dev/null; then
+        error "Failed to download/dearmor AMD GPG key from rocm.gpg.key"
+        return 1
+    fi
+    sudo chmod a+r /etc/apt/keyrings/rocm.gpg
+    success "  AMD GPG key installed"
     return 0
 }
 
