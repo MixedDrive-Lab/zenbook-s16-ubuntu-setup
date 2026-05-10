@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.3] — 2026-05-10
+
+### Fixed
+
+- **Cursor install failed: GPG key 403** in Section 06. Cursor deprecated their APT repo at `downloads.cursor.com/aptrepo` (returns HTTP 403 as of 2026-05). The old `_install_cursor` flow:
+  ```
+  curl https://downloads.cursor.com/aptrepo/public.gpg.key
+      → "Cursor GPG key download failed"
+  ```
+
+  Replaced with direct `.deb` download from Cursor's "golden/latest" channel (the same one Cursor's own auto-updater uses):
+  ```
+  https://api2.cursor.sh/updates/download/golden/linux-x64-deb/cursor/latest
+  ```
+  Returns 200 with redirect to current latest .deb (~173 MB). Reused existing `install_deb` helper. Future-proof — no hardcoded version.
+
+### Changed
+
+- `_install_cursor` now also **cleans up stale `/etc/apt/sources.list.d/cursor.list` + `/etc/apt/keyrings/cursor.gpg`** if leftover from older script versions, then runs `apt update` to clear the repo cache. Without this cleanup, `apt update` would keep printing "Failed to fetch …/dists/stable/InRelease 403" warnings on every run.
+
 ## [0.3.2] — 2026-05-10
 
 ### Fixed

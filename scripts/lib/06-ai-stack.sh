@@ -38,40 +38,30 @@ _install_cursor() {
         return 0
     fi
 
-    # Cursor migrated from AppImage download to an official APT repo.
-    # If the repo is already present (Cursor team auto-set it up for some users),
-    # skip the key+repo dance and jump straight to apt install.
-    if [[ ! -f /etc/apt/sources.list.d/cursor.list ]] \
-       && [[ ! -f /etc/apt/sources.list.d/cursor.sources ]]; then
-        log "Adding Cursor APT repository..."
-        if [[ "$DRY_RUN" == "true" ]]; then
-            log "[DRY-RUN] would add Cursor apt repo"
-        else
-            sudo install -m 0755 -d /etc/apt/keyrings
-            if ! curl -fsSL https://downloads.cursor.com/aptrepo/public.gpg.key \
-                | sudo gpg --dearmor -o /etc/apt/keyrings/cursor.gpg 2>/dev/null; then
-                error "Cursor GPG key download failed"
-                return 1
-            fi
-            sudo chmod a+r /etc/apt/keyrings/cursor.gpg
-            echo "deb [signed-by=/etc/apt/keyrings/cursor.gpg arch=amd64] https://downloads.cursor.com/aptrepo stable main" \
-                | sudo tee /etc/apt/sources.list.d/cursor.list >/dev/null
-            sudo apt update >>"$LOG_FILE" 2>&1
-        fi
-    else
-        success "Cursor APT repo already configured"
-        # Make sure cache reflects what's there
+    # 2026-05: Cursor's old APT repo at downloads.cursor.com/aptrepo returns
+    # HTTP 403 — the channel was removed. Cursor now ships only the .deb via
+    # the api2.cursor.sh "golden/latest" channel (used by their auto-updater).
+    # We fetch + install that directly.
+    local cursor_url="https://api2.cursor.sh/updates/download/golden/linux-x64-deb/cursor/latest"
+
+    # Clean up any leftover broken repo files from older versions of this script
+    if [[ -f /etc/apt/sources.list.d/cursor.list ]] || \
+       [[ -f /etc/apt/keyrings/cursor.gpg ]]; then
+        log "Removing stale Cursor APT repo (channel was deprecated)..."
         if [[ "$DRY_RUN" != "true" ]]; then
-            sudo apt update >>"$LOG_FILE" 2>&1
+            sudo rm -f /etc/apt/sources.list.d/cursor.list \
+                       /etc/apt/sources.list.d/cursor.sources \
+                       /etc/apt/keyrings/cursor.gpg
+            sudo apt update >>"$LOG_FILE" 2>&1 || true
         fi
     fi
 
-    log "Installing Cursor via apt..."
-    apt_install cursor
+    log "Installing Cursor (~173 MB .deb from cursor.com)..."
+    install_deb "$cursor_url" cursor
 
     # Sanity: confirm binary present
     if [[ "$DRY_RUN" != "true" ]] && ! command -v cursor &>/dev/null; then
-        warn "Cursor apt install reported success but 'cursor' binary not in PATH."
+        warn "Cursor install reported success but 'cursor' binary not in PATH."
         warn "Try: which cursor; dpkg -L cursor | grep bin"
     fi
 }
