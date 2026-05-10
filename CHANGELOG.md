@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.6] — 2026-05-10
+
+### Fixed
+
+- **XRT verbose dump on every terminal start**. `/opt/xilinx/xrt/setup.sh` (Xilinx-shipped) prints a multi-line env-var summary plus `Autocomplete enabled for the xrt-smi command` whenever it's sourced. The line sec 11b appended to `~/.bashrc` invoked it without output redirection, so every interactive shell opened with this noise dump:
+  ```
+  Autocomplete enabled for the xrt-smi command
+  XILINX_XRT          : /opt/xilinx/xrt
+  PATH                : /opt/xilinx/xrt/bin:...
+  LD_LIBRARY_PATH     : /opt/xilinx/xrt/lib:...
+  PYTHONPATH          : /opt/xilinx/xrt/python
+  ```
+
+  Fix: append `>/dev/null 2>&1` to the source line. Env vars (`XILINX_XRT`, `PATH`, `LD_LIBRARY_PATH`, `PYTHONPATH`) still get exported normally; only the print statements are silenced.
+
+  Workaround for users on v0.3.5 or earlier who already have the noisy line:
+  ```bash
+  sed -i 's|source "/opt/xilinx/xrt/setup.sh"|source "/opt/xilinx/xrt/setup.sh" >/dev/null 2>\&1|' ~/.bashrc
+  ```
+
 ## [0.3.5] — 2026-05-10
 
 ### Fixed

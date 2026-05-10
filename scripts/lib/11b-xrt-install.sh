@@ -154,14 +154,16 @@ _xrtb_setup_bashrc() {
     {
         echo ""
         echo "# Added by zenbook-s16-ubuntu-setup (Section 11b — XRT)"
+        echo "# XRT's setup.sh prints verbose env-var dumps + 'autocomplete enabled'"
+        echo "# on every shell start — silenced here. Vars still get exported."
         echo "if [[ -f \"$XRT_SETUP_SCRIPT\" ]]; then"
         echo "    export LD_LIBRARY_PATH=/lib/x86_64-linux-gnu\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
         # shellcheck disable=SC2129
-        echo "    source \"$XRT_SETUP_SCRIPT\""
+        echo "    source \"$XRT_SETUP_SCRIPT\" >/dev/null 2>&1"
         echo "fi"
     } >> "$bashrc"
 
-    success "XRT setup added to ~/.bashrc"
+    success "XRT setup added to ~/.bashrc (silent)"
     log "Open a fresh terminal (or run 'source ~/.bashrc') for vars to take effect."
 }
 
