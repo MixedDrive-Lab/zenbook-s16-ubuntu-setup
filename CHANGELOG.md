@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.5] — 2026-05-10
+
+### Fixed
+
+- **`zenbook-validate` reported Rust missing** even after `--stage C` completed successfully and `~/.cargo/bin/cargo` existed. Root cause: rustup writes `source ~/.cargo/env` into `~/.bashrc` / `~/.profile`, but those are **only loaded by interactive shells**. `zenbook-validate` runs as a non-interactive bash script — `~/.cargo/env` was never sourced — so `command -v cargo` and `command -v rustc` returned empty.
+
+  Fix: the generated `~/.local/bin/zenbook-validate` now sources known shell init fragments at startup, before any `cmd_check` runs:
+  - `~/.cargo/env` (rustup)
+  - `$HOME/.local/share/mise/shims` prepended to `PATH` (mise-managed languages)
+  - `$HOME/.local/bin` prepended to `PATH`
+  - `/opt/xilinx/xrt/setup.sh` (XRT runtime, sourced silently — same line sec 11b appends to `~/.bashrc`)
+
+  Workaround for users on v0.3.4 or earlier: `source ~/.cargo/env && zenbook-validate` (no longer needed in v0.3.5+).
+
 ## [0.3.4] — 2026-05-10
 
 ### Added

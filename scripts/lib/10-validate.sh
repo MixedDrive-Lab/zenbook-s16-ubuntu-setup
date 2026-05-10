@@ -27,6 +27,23 @@ run_section_10_validate() {
 
 set -u
 
+# ---------------------------------------------------------------------------
+# Source common shell init fragments so we can detect tools that install
+# their own PATH entries (rustup, mise) without requiring an interactive
+# shell. Without this, `command -v cargo` returns nothing in non-interactive
+# invocations even after `--stage C` succeeds.
+# ---------------------------------------------------------------------------
+# rustup writes ~/.cargo/env (and adds source to ~/.bashrc / ~/.profile)
+# shellcheck disable=SC1091
+[[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
+# mise installs shims to ~/.local/share/mise/shims (managed languages) and
+# the mise binary itself can be in ~/.local/bin or via apt.
+[[ -d "$HOME/.local/share/mise/shims" ]] && export PATH="$HOME/.local/share/mise/shims:$PATH"
+[[ -d "$HOME/.local/bin" ]]              && export PATH="$HOME/.local/bin:$PATH"
+# XRT runtime (Section 11b appends `source /opt/xilinx/xrt/setup.sh` to ~/.bashrc)
+# shellcheck disable=SC1091
+[[ -f /opt/xilinx/xrt/setup.sh ]] && source /opt/xilinx/xrt/setup.sh >/dev/null 2>&1
+
 ok()    { printf '  \033[0;32m✓\033[0m %s\n' "$1"; }
 miss()  { printf '  \033[0;31m✗\033[0m %s\n' "$1"; }
 hdr()   { printf '\n\033[1m%s\033[0m\n' "$1"; }
