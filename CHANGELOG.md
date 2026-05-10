@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.7] — 2026-05-10
+
+### Fixed
+
+- **`btop` crashes on launch** on Zenbook S16 (AMD Ryzen AI 9 HX 370 / Radeon 890M iGPU). btop's GPU monitoring code chokes when querying the Strix Point integrated graphics — possibly a libdrm / amdgpu probe path that doesn't handle XDNA-enabled SoCs cleanly.
+
+  Fix: Section 03 now drops a minimal `~/.config/btop/btop.conf` containing `show_gpu_info = "Off"` right after the `apt_install` of terminal QoL tools. Only written if the file doesn't already exist (never clobbers user customizations).
+
+  Workaround for users who already hit this on v0.3.6 or earlier:
+  ```bash
+  mkdir -p ~/.config/btop
+  echo 'show_gpu_info = "Off"' >> ~/.config/btop/btop.conf
+  btop
+  ```
+
 ## [0.3.6] — 2026-05-10
 
 ### Fixed
