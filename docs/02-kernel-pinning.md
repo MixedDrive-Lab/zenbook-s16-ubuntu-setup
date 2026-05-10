@@ -28,24 +28,50 @@ Without working SVA, no userspace tool can talk to the NPU: ROCm, AMD's XDNA run
    - `linux-modules-6.17.0-20-generic`
    - `linux-modules-extra-6.17.0-20-generic`
 3. Runs `update-grub` so the new kernel is bootable.
-4. **Sets `GRUB_DEFAULT` so `6.17.0-20-generic` boots automatically.** Tries to resolve a stable menuentry id from `/boot/grub/grub.cfg` (e.g. `1>gnulinux-6.17.0-20-generic-advanced-UUID`), falls back to a position-pair like `"1>2"` if parsing fails. Then re-runs `update-grub` so the new default takes effect.
+4. **Sets `GRUB_DEFAULT` so `6.17.0-20-generic` boots automatically.** Three strategies, in order:
+   - **A. Title-based** (default since v0.3.1): writes `GRUB_DEFAULT="<submenu_title>><entry_title>"` — e.g. `"Advanced options for Ubuntu>Ubuntu, with Linux 6.17.0-20-generic"`. Most readable + survives `update-grub` reordering.
+   - **B. Menuentry-id** (fallback): `"<submenu_id>><menu_id>"`, e.g. `"gnulinux-advanced-UUID>gnulinux-6.17.0-20-generic-advanced-UUID"`.
+   - **C. Position-pair** (last resort): `"1>N"` where `N` is the zero-indexed position inside the Advanced submenu.
 
-   If both strategies fail, the script logs the manual fix:
-   ```bash
-   # Inspect the GRUB menu structure:
-   awk -F"'" '/menuentry|submenu/ {print NR": "$2}' /boot/grub/grub.cfg
-
-   # Find the line matching 6.17.0-20-generic, count its position inside
-   # the "Advanced options for Ubuntu" submenu (zero-indexed), then:
-   sudo sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT="1>N"/' /etc/default/grub
-   sudo update-grub
-   ```
+   After writing, the script re-runs `update-grub` and **verifies** that `/etc/default/grub`'s `GRUB_DEFAULT` line now contains `6.17.0-20`. If not, sec 02 returns a non-zero exit code and Stage A's final banner switches to the **`MANUAL GRUB FIX NEEDED`** variant which prints a copy-pasteable `sed` command (see [Manual GRUB fix](#manual-grub-fix) below).
 5. Runs `apt-mark hold` on `linux-image-generic`, `linux-headers-generic`, `linux-generic` so future `apt upgrade` won't replace your kernel with `-22+`.
 6. Tells you to reboot.
 
 After reboot, `uname -r` should report `6.17.0-20-generic`.
 
-## Manual fallback
+## Manual GRUB fix
+
+If sec 02 reported "GRUB_DEFAULT could not be set automatically" (or `uname -r` after reboot still shows the wrong kernel), set the default by hand:
+
+```bash
+# 1. Inspect your menu structure to find the right titles:
+sudo awk -F"'" '/menuentry|submenu/ && !/recovery/ {print NR": "$2}' /boot/grub/grub.cfg
+# Expect output like:
+#   150: Ubuntu                                            <- main entry (latest kernel)
+#   162: Advanced options for Ubuntu                       <- submenu title
+#   163: Ubuntu, with Linux 6.17.0-23-generic              <- inside submenu
+#   190: Ubuntu, with Linux 6.17.0-20-generic              <- the one we want
+
+# 2. Set GRUB_DEFAULT to "<submenu_title>><entry_title>".
+# Note the literal '>' separator (NOT '>>').
+sudo sed -i 's|^GRUB_DEFAULT=.*|GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux 6.17.0-20-generic"|' /etc/default/grub
+
+# 3. Verify:
+grep ^GRUB_DEFAULT /etc/default/grub
+
+# 4. Apply + reboot:
+sudo update-grub
+sudo reboot
+
+# 5. Verify after boot:
+uname -r   # should show 6.17.0-20-generic
+```
+
+If your distro's submenu/entry titles are different (e.g. localized Ubuntu), substitute the actual values from step 1's output.
+
+Alternative: at the GRUB boot menu, manually pick **Advanced options for Ubuntu → Ubuntu, with Linux 6.17.0-20-generic** every time. Tedious but doesn't require editing config.
+
+## Manual fallback (kernel not in apt)
 
 If `linux-image-6.17.0-20-generic` is no longer in your apt archive (it gets pruned eventually), you have three options:
 

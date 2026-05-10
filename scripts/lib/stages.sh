@@ -29,9 +29,38 @@ _run_stage_A() {
     run_section_01_preflight  || { error "Pre-flight failed - aborting Stage A"; exit 1; }
     run_section_02_kernel_pin || warn "Section 02 had errors (kernel pin)"
 
-    # Decide reboot status by checking running kernel vs target
+    # Decide which banner variant to print:
+    #   1. GRUB fix needed   → kernel installed but GRUB default not set
+    #   2. No reboot needed  → already running target kernel
+    #   3. Reboot now        → target kernel installed + GRUB default set
     local current_kernel
     current_kernel="$(uname -r)"
+    local grub_fail_marker="$HOME/.cache/zenbook-s16-setup/sec02-grub-fix-needed"
+    if [[ -f "$grub_fail_marker" ]]; then
+        print_banner \
+            "S T A G E   A   .   M A N U A L   G R U B   F I X   N E E D E D" \
+            "> Kernel ${TARGET_KERNEL}-generic is installed and held," \
+            "  but GRUB_DEFAULT could not be set automatically." \
+            "  (See errors above for the awk strategies that failed.)" \
+            "" \
+            "> Quickest fix (works on Ubuntu 24.04 default GRUB layout):" \
+            "" \
+            "    sudo sed -i 's|^GRUB_DEFAULT=.*|GRUB_DEFAULT=\"Advanced options\\\\" \
+            "        for Ubuntu>Ubuntu, with Linux ${TARGET_KERNEL}-generic\"|' \\\\" \
+            "        /etc/default/grub" \
+            "    sudo update-grub" \
+            "    sudo reboot" \
+            "" \
+            "> Or at GRUB boot menu, pick manually:" \
+            "      Advanced options for Ubuntu  >  ${TARGET_KERNEL}-generic" \
+            "" \
+            "> Detailed steps + how to inspect grub.cfg:" \
+            "      docs/02-kernel-pinning.md  (\"Manual GRUB fix\" section)" \
+            "" \
+            "> After uname -r shows ${TARGET_KERNEL}-generic, continue with --stage B." \
+            "  Re-running --stage A is safe (idempotent)."
+        return 0
+    fi
     if [[ "$current_kernel" == "${TARGET_KERNEL}-generic" ]]; then
         print_banner \
             "S T A G E   A   .   D O N E   .   N O   R E B O O T   N E E D E D" \

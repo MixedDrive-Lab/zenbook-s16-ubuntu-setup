@@ -6,6 +6,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-05-10
+
+### Fixed
+
+- **Section 02 GRUB_DEFAULT failure on Ubuntu 24.04 with multiple kernels** — `_set_default_boot` in `scripts/lib/02-kernel-pin.sh` was returning silently with `GRUB_DEFAULT=0` (= boot the latest kernel = `-23`) when both the menuentry-id awk strategy and the position-based fallback failed. Reported by user with kernels `-20` and `-23` both installed and grub.cfg containing the entry at line 190 — but with function-defs noise at the top of grub.cfg breaking the menuentry-id parser.
+
+  Fix introduces a new **Strategy A: title-based** that writes the human-readable form GRUB supports natively:
+  ```
+  GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux 6.17.0-20-generic"
+  ```
+  Title-based runs first; existing menuentry-id and position-pair strategies are kept as fallbacks (B and C).
+
+- **Section 02 now propagates GRUB-update failure to the caller.** `_set_default_boot` returns non-zero (instead of silently warning + return 0) when none of the three strategies produce a valid `GRUB_DEFAULT` containing the target kernel version. `run_section_02_kernel_pin` writes a state marker `~/.cache/zenbook-s16-setup/sec02-grub-fix-needed` on failure.
+
+### Added
+
+- **Stage A banner: `MANUAL GRUB FIX NEEDED` variant.** When the GRUB-fail marker is present, Stage A prints a third banner variant with a copy-pasteable `sudo sed` command to fix `GRUB_DEFAULT` by hand, plus a fallback instruction to pick the kernel from the GRUB boot menu manually. Detected via the marker file in `scripts/lib/stages.sh`.
+
+- **Verification step** at the end of `_set_default_boot`: re-reads `/etc/default/grub` and grep-checks that `GRUB_DEFAULT` contains the `TARGET_KERNEL` string (`6.17.0-20`). If not, returns non-zero with a clear error pointing at expected vs actual values.
+
+- **`docs/02-kernel-pinning.md` — new "Manual GRUB fix" section** with the exact diagnostic + fix commands (the same ones referenced by the new banner). Step 4 of the script-flow description is rewritten to document the three GRUB strategies (A: title-based, B: menuentry-id, C: position-pair).
+
 ## [0.3.0] — 2026-05-10
 
 ### Added

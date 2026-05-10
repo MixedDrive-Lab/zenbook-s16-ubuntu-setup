@@ -21,6 +21,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 readonly TARGET_KERNEL="6.17.0-20"
+readonly GRUB_FAIL_MARKER="$HOME/.cache/zenbook-s16-setup/sec02-grub-fix-needed"
 
 run_section_02_kernel_pin() {
     log "=== Section 02: Kernel pinning (amdxdna NPU fix) ==="
@@ -30,7 +31,10 @@ run_section_02_kernel_pin() {
         return 0
     fi
 
-    local current_kernel
+    # Clean any stale GRUB-fail marker from a previous run (we'll re-flag if needed)
+    rm -f "$GRUB_FAIL_MARKER" 2>/dev/null || true
+
+    local current_kernel grub_rc=0
     current_kernel="$(uname -r)"
     log "Current kernel: $current_kernel"
 
@@ -44,8 +48,14 @@ run_section_02_kernel_pin() {
     # Already installed on disk?
     if dpkg -l "linux-image-${TARGET_KERNEL}-generic" 2>/dev/null | grep -q "^ii"; then
         success "Target kernel ${TARGET_KERNEL} already installed (not booted)"
-        _set_default_boot
+        _set_default_boot || grub_rc=$?
         _hold_kernel_packages
+        if [[ "$grub_rc" -ne 0 ]]; then
+            ensure_dir "$(dirname "$GRUB_FAIL_MARKER")"
+            date -Iseconds > "$GRUB_FAIL_MARKER"
+            warn "GRUB default could NOT be set automatically — see banner for manual fix"
+            return 1
+        fi
         warn "Reboot required to switch to ${TARGET_KERNEL}-generic"
         return 0
     fi
@@ -73,8 +83,15 @@ run_section_02_kernel_pin() {
         fi
     fi
 
-    _set_default_boot
+    _set_default_boot || grub_rc=$?
     _hold_kernel_packages
+
+    if [[ "$grub_rc" -ne 0 ]]; then
+        ensure_dir "$(dirname "$GRUB_FAIL_MARKER")"
+        date -Iseconds > "$GRUB_FAIL_MARKER"
+        warn "GRUB default could NOT be set automatically — see banner for manual fix"
+        return 1
+    fi
 
     warn "Reboot REQUIRED to switch to kernel ${TARGET_KERNEL}-generic"
     warn "After reboot, verify with: uname -r"
@@ -108,47 +125,65 @@ _set_default_boot() {
         return 0
     fi
 
-    # Step 1: regenerate grub.cfg first so we can parse it for menuentry IDs.
+    # Step 1: regenerate grub.cfg first so we can parse it.
     log "Updating GRUB so the held kernel is bootable..."
     sudo update-grub >>"$LOG_FILE" 2>&1 || warn "update-grub returned non-zero"
 
     # Step 2: Compute the right GRUB_DEFAULT value for ${TARGET_KERNEL}-generic.
     #
-    # Strategy (most-stable → fallback):
-    #   A. Look up the menuentry id (e.g. gnulinux-6.17.0-20-generic-advanced-UUID).
-    #      Position-independent: survives kernel add/remove, recovery-mode noise.
-    #   B. Fallback to "1>N" position-pair (compatible with submenu structure
-    #      that Ubuntu 24.04 ships by default).
+    # Strategy (most-readable + robust → fallback):
+    #   A. Title-based: "<submenu_title>><entry_title>" — e.g.
+    #        "Advanced options for Ubuntu>Ubuntu, with Linux 6.17.0-20-generic"
+    #      GRUB supports this format natively. Survives function-defs noise at
+    #      the top of grub.cfg (which broke older menuentry-id parsing).
+    #   B. menuentry-id (e.g. "gnulinux-advanced-UUID>gnulinux-6.17.0-20-...").
+    #   C. Position pair "1>N".
     local target_default=""
     local target_kernel_full="${TARGET_KERNEL}-generic"
 
-    # --- Strategy A: menuentry id ---
-    # Match a non-recovery menuentry that mentions our kernel.
     # awk -F"'" splits on single-quotes; on a typical Ubuntu line like:
     #   menuentry 'Ubuntu, with Linux 6.17.0-20-generic' --class ... $menuentry_id_option 'gnulinux-...-advanced-UUID' {
-    # field 2 is the visible label, field 4 is the menuentry id we want.
-    local menu_id submenu_id
-    submenu_id=$(awk -F"'" '/^submenu / { print $4; exit }' /boot/grub/grub.cfg 2>/dev/null)
-    menu_id=$(awk -F"'" -v k="$target_kernel_full" '
+    # field 2 is the visible label, field 4 is the menuentry id.
+
+    # --- Strategy A: title-based ---
+    local sub_title menu_title
+    sub_title=$(awk -F"'" '/^submenu / { print $2; exit }' /boot/grub/grub.cfg 2>/dev/null)
+    menu_title=$(awk -F"'" -v k="$target_kernel_full" '
         /^[[:space:]]*menuentry / && index($0, k) && !/recovery mode/ {
-            print $4
+            print $2
             exit
         }' /boot/grub/grub.cfg 2>/dev/null)
 
-    if [[ -n "$submenu_id" ]] && [[ -n "$menu_id" ]]; then
-        target_default="${submenu_id}>${menu_id}"
-        log "Resolved GRUB menuentry id: $target_default"
-    elif [[ -n "$menu_id" ]]; then
-        # No submenu (rare on Ubuntu, but possible)
-        target_default="$menu_id"
-        log "Resolved GRUB menuentry id (no submenu): $target_default"
+    if [[ -n "$sub_title" ]] && [[ -n "$menu_title" ]]; then
+        target_default="${sub_title}>${menu_title}"
+        log "Resolved GRUB title path: $target_default"
+    elif [[ -n "$menu_title" ]]; then
+        target_default="$menu_title"
+        log "Resolved GRUB title (no submenu): $target_default"
     fi
 
-    # --- Strategy B: position fallback "1>N" ---
+    # --- Strategy B: menuentry id ---
     if [[ -z "$target_default" ]]; then
-        warn "Could not resolve menuentry id — trying position-based fallback"
-        # Find which position our kernel occupies inside the Advanced submenu.
-        # We assume a single submenu at position 1 (Ubuntu's standard layout).
+        warn "Title-based GRUB_DEFAULT failed — trying menuentry-id fallback"
+        local sub_id menu_id
+        sub_id=$(awk -F"'" '/^submenu / { print $4; exit }' /boot/grub/grub.cfg 2>/dev/null)
+        menu_id=$(awk -F"'" -v k="$target_kernel_full" '
+            /^[[:space:]]*menuentry / && index($0, k) && !/recovery mode/ {
+                print $4
+                exit
+            }' /boot/grub/grub.cfg 2>/dev/null)
+        if [[ -n "$sub_id" ]] && [[ -n "$menu_id" ]]; then
+            target_default="${sub_id}>${menu_id}"
+            log "Resolved menuentry id: $target_default"
+        elif [[ -n "$menu_id" ]]; then
+            target_default="$menu_id"
+            log "Resolved menuentry id (no submenu): $target_default"
+        fi
+    fi
+
+    # --- Strategy C: position fallback "1>N" ---
+    if [[ -z "$target_default" ]]; then
+        warn "menuentry-id GRUB_DEFAULT failed — trying position-based fallback"
         local pos
         pos=$(awk -F"'" -v k="$target_kernel_full" '
             BEGIN { in_sub = 0; idx = -1 }
@@ -168,14 +203,13 @@ _set_default_boot() {
     fi
 
     if [[ -z "$target_default" ]]; then
-        warn "Could not locate ${target_kernel_full} menuentry in /boot/grub/grub.cfg"
-        warn "Inspect manually: awk -F\"'\" '/menuentry|submenu/ {print NR\": \"\$2}' /boot/grub/grub.cfg"
-        warn "Then set /etc/default/grub: GRUB_DEFAULT=\"<submenu>>\<entry>\" and run sudo update-grub"
-        return 0
+        error "Could not locate ${target_kernel_full} menuentry in /boot/grub/grub.cfg"
+        error "Inspect manually: sudo awk -F\"'\" '/menuentry|submenu/ && !/recovery/ {print NR\": \"\$2}' /boot/grub/grub.cfg"
+        error "Then set /etc/default/grub: GRUB_DEFAULT=\"<submenu_title>><entry_title>\" and run sudo update-grub"
+        return 1
     fi
 
     # Step 3: Set GRUB_DEFAULT in /etc/default/grub idempotently.
-    # We always overwrite the line so re-runs converge to the right value.
     if grep -q '^GRUB_DEFAULT=' /etc/default/grub; then
         sudo sed -i "s|^GRUB_DEFAULT=.*|GRUB_DEFAULT=\"${target_default}\"|" /etc/default/grub
     else
@@ -192,9 +226,17 @@ _set_default_boot() {
     log "Regenerating grub.cfg with the new default..."
     sudo update-grub >>"$LOG_FILE" 2>&1 || warn "second update-grub returned non-zero"
 
-    # Step 5: Verify
+    # Step 5: Verification — read back GRUB_DEFAULT and confirm it mentions our kernel.
     local actual
     actual=$(grep '^GRUB_DEFAULT=' /etc/default/grub | head -1)
     log "Final config: $actual"
-    success "Next boot will use ${target_kernel_full}"
+    if echo "$actual" | grep -q "$TARGET_KERNEL"; then
+        success "Verified: GRUB_DEFAULT now references ${target_kernel_full}"
+        return 0
+    else
+        error "GRUB_DEFAULT was set but verification failed"
+        error "  Expected to contain: $TARGET_KERNEL"
+        error "  Got: $actual"
+        return 1
+    fi
 }

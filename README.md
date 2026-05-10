@@ -2,7 +2,7 @@
 
 > Battle-tested Ubuntu 24.04 LTS setup for ASUS Zenbook S16 (UM5606) with AMD Ryzen AI 9 HX 370. Kernel 6.17.0-20 pinned for amdxdna NPU compatibility. Auto-setup script + manual walkthrough.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/24.04/) [![Hardware](https://img.shields.io/badge/Hardware-Zenbook%20S16-blue)](https://github.com/MixedDrive-Lab/zenbook-s16-ubuntu-setup) [![Version](https://img.shields.io/badge/version-v0.3.0-brightgreen)](https://github.com/MixedDrive-Lab/zenbook-s16-ubuntu-setup/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/24.04/) [![Hardware](https://img.shields.io/badge/Hardware-Zenbook%20S16-blue)](https://github.com/MixedDrive-Lab/zenbook-s16-ubuntu-setup) [![Version](https://img.shields.io/badge/version-v0.3.1-brightgreen)](https://github.com/MixedDrive-Lab/zenbook-s16-ubuntu-setup/releases)
 
 ------
 
@@ -10,7 +10,7 @@
 
 This repository contains the development environment setup used at [MixedDrive Lab](https://mixeddrivelab.org/) on the primary research workstation: **ASUS Zenbook S16 (UM5606)** with **AMD Ryzen AI 9 HX 370** and **32 GB RAM**, running **Ubuntu 24.04.4 LTS** (Wayland).
 
-> **Status:** alpha (`v0.3.0`). Tested on a single Zenbook S16 UM5606HA. PRs welcome — see `.github/ISSUE_TEMPLATE/hardware_compat.md` if you have a different revision.
+> **Status:** alpha (`v0.3.1`). Tested on a single Zenbook S16 UM5606HA. PRs welcome — see `.github/ISSUE_TEMPLATE/hardware_compat.md` if you have a different revision.
 
 ## What this gives you
 
