@@ -42,7 +42,13 @@ set -u
 [[ -d "$HOME/.local/bin" ]]              && export PATH="$HOME/.local/bin:$PATH"
 # XRT runtime (Section 11b appends `source /opt/xilinx/xrt/setup.sh` to ~/.bashrc)
 # shellcheck disable=SC1091
-[[ -f /opt/xilinx/xrt/setup.sh ]] && source /opt/xilinx/xrt/setup.sh >/dev/null 2>&1
+if [[ -f /opt/xilinx/xrt/setup.sh ]]; then
+    source /opt/xilinx/xrt/setup.sh >/dev/null 2>&1
+    # Ensure ROCm's libhsa-runtime64 takes precedence over the system-packaged one.
+    # XRT setup.sh sets LD_LIBRARY_PATH; without /opt/rocm/lib first, LD_LIBRARY_PATH
+    # overrides RUNPATH in ROCm binaries → wrong libhsa-runtime64 → HSA errors.
+    export LD_LIBRARY_PATH=/opt/rocm/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+fi
 
 ok()    { printf '  \033[0;32m✓\033[0m %s\n' "$1"; }
 miss()  { printf '  \033[0;31m✗\033[0m %s\n' "$1"; }
@@ -71,6 +77,22 @@ echo "  $(lsb_release -ds 2>/dev/null || echo '(lsb_release missing)')"
 echo "  Kernel: $(uname -r)"
 echo "  Architecture: $(uname -m)"
 echo "  Display: ${XDG_SESSION_TYPE:-unknown}"
+
+hdr "XRT / NPU"
+if command -v xrt-smi &>/dev/null; then
+    ok "xrt-smi installed"
+    xrt_fw=$(cat /sys/bus/pci/devices/0000:c5:00.1/fw_version 2>/dev/null \
+        || xrt-smi examine 2>/dev/null | awk '/Firmware/{print $NF}' | head -1 || true)
+    [[ -n "$xrt_fw" ]] && ok "NPU firmware: $xrt_fw" || miss "NPU firmware version unreadable"
+    # Quick validate — latency test only (< 5 s); gemm/throughput need perf mode
+    if xrt-smi validate --device 0000:c5:00.1 2>/dev/null | grep -q 'Test Status.*PASSED'; then
+        ok "xrt-smi validate: at least one test passed"
+    else
+        miss "xrt-smi validate: no tests passed (run manually for detail)"
+    fi
+else
+    miss "xrt-smi not installed (run --section 11b)"
+fi
 
 hdr "amdxdna NPU (multi-method)"
 # Known AMD Ryzen AI NPU PCI device IDs (vendor 1022 = AMD):
@@ -104,7 +126,7 @@ else
     miss "dmesg: no amdxdna entries (try: sudo dmesg | grep -i amdxdna)"
 fi
 
-hdr "GPU / Vulkan"
+hdr "GPU / Vulkan / ROCm"
 lspci 2>/dev/null | grep -iE "vga|3d|display" | sed 's/^/  /' || true
 if command -v vulkaninfo &>/dev/null; then
     if vulkaninfo --summary 2>/dev/null | grep -qE "Radeon|amdgpu"; then
@@ -114,6 +136,17 @@ if command -v vulkaninfo &>/dev/null; then
     fi
 else
     miss "vulkaninfo not installed"
+fi
+if command -v rocminfo &>/dev/null; then
+    rocm_agents=$(rocminfo 2>/dev/null | grep -c 'Device Type:.*GPU' || true)
+    if [[ "$rocm_agents" -gt 0 ]]; then
+        rocm_gfx=$(rocminfo 2>/dev/null | awk '/Device Type:.*GPU/{found=1} found && /Name:/{print $2; exit}' || true)
+        ok "ROCm: GPU agent detected (${rocm_gfx:-unknown gfx})"
+    else
+        miss "ROCm: no GPU agent (check LD_LIBRARY_PATH — /opt/rocm/lib must precede /lib/x86_64-linux-gnu)"
+    fi
+else
+    miss "rocminfo not installed"
 fi
 
 hdr "Build tools"

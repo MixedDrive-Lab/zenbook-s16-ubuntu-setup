@@ -263,13 +263,37 @@ _xrtb_setup_bashrc() {
     local bashrc="$HOME/.bashrc"
     [[ ! -f "$bashrc" ]] && touch "$bashrc"
 
-    if grep -q "$XRT_SETUP_SCRIPT" "$bashrc"; then
-        success "XRT setup line already in ~/.bashrc"
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "[DRY-RUN] append/update XRT lines in ~/.bashrc"
         return 0
     fi
 
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log "[DRY-RUN] append XRT lines to ~/.bashrc"
+    # Migration (v0.3.11): older versions prepended /lib/x86_64-linux-gnu to
+    # LD_LIBRARY_PATH before sourcing XRT setup.sh. That overrides RUNPATH in
+    # ROCm binaries, causing them to load the system-packaged libhsa-runtime64
+    # instead of /opt/rocm/lib's version → HSA_STATUS_ERROR_INVALID_ARGUMENT
+    # from rocminfo, clinfo, and any HIP application.
+    if grep -q 'LD_LIBRARY_PATH=/lib/x86_64-linux-gnu' "$bashrc"; then
+        sed -i '/export LD_LIBRARY_PATH=\/lib\/x86_64-linux-gnu/d' "$bashrc"
+        success "Removed stale LD_LIBRARY_PATH=/lib/x86_64-linux-gnu from ~/.bashrc (ROCm coexistence fix)"
+    fi
+
+    if grep -q "$XRT_SETUP_SCRIPT" "$bashrc"; then
+        # XRT source line already present. Ensure the /opt/rocm/lib priority fix is also there.
+        if ! grep -q '/opt/rocm/lib' "$bashrc"; then
+            cat >> "$bashrc" <<'ROCM_FIX'
+
+# Added by zenbook-s16-ubuntu-setup v0.3.11+ (ROCm/XRT LD_LIBRARY_PATH fix)
+# Ensure ROCm's libhsa-runtime64 takes precedence over the system-packaged one.
+# XRT setup.sh prepends /opt/xilinx/xrt/lib to LD_LIBRARY_PATH; without this,
+# LD_LIBRARY_PATH overrides RUNPATH in ROCm binaries, loading the wrong
+# libhsa-runtime64 and causing HSA_STATUS_ERROR_INVALID_ARGUMENT.
+export LD_LIBRARY_PATH=/opt/rocm/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+ROCM_FIX
+            success "Added /opt/rocm/lib priority to ~/.bashrc (ROCm/XRT coexistence fix)"
+        else
+            success "XRT setup already in ~/.bashrc (with ROCm fix)"
+        fi
         return 0
     fi
 
@@ -279,9 +303,12 @@ _xrtb_setup_bashrc() {
         echo "# XRT's setup.sh prints verbose env-var dumps + 'autocomplete enabled'"
         echo "# on every shell start — silenced here. Vars still get exported."
         echo "if [[ -f \"$XRT_SETUP_SCRIPT\" ]]; then"
-        echo "    export LD_LIBRARY_PATH=/lib/x86_64-linux-gnu\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
-        # shellcheck disable=SC2129
         echo "    source \"$XRT_SETUP_SCRIPT\" >/dev/null 2>&1"
+        echo "    # Ensure ROCm's libhsa-runtime64 takes precedence over the system-packaged"
+        echo "    # version. XRT setup.sh sets LD_LIBRARY_PATH; without /opt/rocm/lib first,"
+        echo "    # LD_LIBRARY_PATH overrides RUNPATH in ROCm binaries → wrong libhsa-runtime64"
+        echo "    # → HSA_STATUS_ERROR_INVALID_ARGUMENT from rocminfo / HIP applications."
+        echo "    export LD_LIBRARY_PATH=/opt/rocm/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
         echo "fi"
     } >> "$bashrc"
 

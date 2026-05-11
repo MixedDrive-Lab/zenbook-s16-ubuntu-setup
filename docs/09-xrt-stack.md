@@ -140,28 +140,67 @@ sudo apt install -y linux-headers-6.17.0-20-generic
 
 Then re-run `--section 11b`.
 
-## Alternative: build XRT from source (no AMD account needed)
+### `rocminfo` fails with `HSA_STATUS_ERROR_INVALID_ARGUMENT` after XRT install
 
-If you'd rather not register for an AMD account, you can build XRT and the plugin from `amd/xdna-driver` source. This is more work (~30 min build) but produces the same `.deb` files:
+XRT's `setup.sh` sets `LD_LIBRARY_PATH=/opt/xilinx/xrt/lib:...`. Since `LD_LIBRARY_PATH` overrides a binary's embedded `RUNPATH`, ROCm tools like `rocminfo` end up loading the Ubuntu-packaged `libhsa-runtime64` from `/lib/x86_64-linux-gnu` instead of the ROCm 7.x version from `/opt/rocm/lib`. These are different builds and the wrong one triggers `HSA_STATUS_ERROR_INVALID_ARGUMENT`.
+
+Section 11b (v0.3.11+) automatically writes `/opt/rocm/lib` to `LD_LIBRARY_PATH` after the XRT source line. To fix an existing `~/.bashrc` manually:
 
 ```bash
-git clone https://github.com/amd/xdna-driver.git
-cd xdna-driver
-git submodule update --init --recursive
-sudo ./tools/amdxdna_deps.sh
+# Remove the old stale line (written by v0.3.10 and earlier)
+sed -i '/export LD_LIBRARY_PATH=\/lib\/x86_64-linux-gnu/d' ~/.bashrc
 
-# Build XRT base
-cd xrt/build
-./build.sh -npu -opt
-# .deb appears in Release/
+# Add ROCm priority (append to the XRT block or at end of file)
+echo 'export LD_LIBRARY_PATH=/opt/rocm/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}' >> ~/.bashrc
 
-# Build XDNA plugin
-cd ../../build
-./build.sh -release
-# plugin .deb appears in Release/
+# Verify in a fresh shell
+bash -i -c 'rocminfo 2>&1 | grep -E "Agent|gfx|Device Type"'
 ```
 
-After the build, copy the four resulting `.deb` files into `~/Downloads/xrt-bundle/` and run `--with-xrt` as normal. The script doesn't care where the `.deb` files came from, only that they match the expected filename patterns.
+Or re-run `./scripts/setup.sh --section 11b` — it detects the old line, removes it, and appends the fix.
+
+### `amdxdna: xdna_mailbox … Message callback ret -22 / disable irq` in dmesg
+
+This is a **cosmetic warning**, not a functional error. The text `disable irq` is a leftover log message string — the actual `disable_irq()` call was removed in the kernel patch `cd740b873` ("accel/amdxdna: Check interrupt register before mailbox_rx_worker exits"), backported to 6.14 and included in 6.17. The NPU IRQ is **not** being disabled despite the message. The underlying race condition (firmware responding right after the driver clears the interrupt register) still triggers occasionally but is handled gracefully — the IRQ stays active and the NPU remains functional.
+
+## Alternative: build XRT from source (no AMD account needed)
+
+Building from `amd/xdna-driver` source skips the AMD account requirement and produces a newer version (2.23+) than the EULA-gated bundle (2.21). **This is now the recommended path** — the source-built version unlocks the GEMM and throughput tests in `xrt-smi validate`.
+
+```bash
+git clone https://github.com/amd/xdna-driver.git ~/xdna-driver
+cd ~/xdna-driver
+git submodule update --init --recursive
+sudo ./tools/amdxdna_deps.sh          # installs ~60 build deps
+
+# 1. Build XRT base packages
+cd xrt/build
+./build.sh -npu -opt                  # ~5-15 min
+cd Release
+cpack -G DEB                          # generates xrt_*.deb files
+cd ../../..
+
+# 2. Build the XDNA plugin package
+cd build
+./build.sh -release                   # ~3-5 min
+cd ..
+
+# 3. Install everything in one transaction
+sudo apt install \
+    xrt/build/Release/xrt_*_24.04-amd64-base.deb \
+    xrt/build/Release/xrt_*_24.04-amd64-npu.deb \
+    build/Release/xrt_plugin.*_24.04-amd64-amdxdna.deb
+# DKMS builds and loads amdxdna.ko automatically on install
+
+# 4. If multiple kernels are installed, build DKMS for each one
+# The apt install step only builds for the running kernel.
+for kver in $(ls /lib/modules/); do
+    [[ "$kver" == "$(uname -r)" ]] && continue   # already built
+    sudo dkms install xrt-amdxdna/"$(dkms status | grep xrt-amdxdna | awk -F',' '{print $1}' | awk '{print $2}')" -k "$kver"
+done
+```
+
+This installs XRT 2.23+ with the full HWCTX feature set. `xrt-smi validate` should show all three tests passing (gemm: ~51 TOPS, latency: ~80 µs, throughput: ~58k–64k op/s).
 
 ## Removing XRT
 

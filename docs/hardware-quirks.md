@@ -82,8 +82,19 @@ If you encrypted `/` with LUKS during install, hibernate writes the unencrypted 
 |---|---|---|
 | `amdxdna` SVA fix | Pending. Tracked in Linux IOMMU mailing list. | LKML thread "iommu: enable SVA on x86 with Strix Point" |
 | Wayland HDR for OLED | GNOME 47+ has experimental support; not enabled by default | `gnome-shell --no-X11 --hdr-experimental` |
-| ROCm support for Radeon 890M (RDNA 3.5) | Officially unsupported in ROCm. Hacks exist via `HSA_OVERRIDE_GFX_VERSION=11.0.0` | https://github.com/ROCm/ROCm |
+| ROCm support for Radeon 890M (RDNA 3.5 / gfx1150) | **Works with ROCm 7.2.3** — `rocminfo` reports `gfx1150` GPU agent, `xrt-smi validate` passes all tests. Requires correct `LD_LIBRARY_PATH` ordering (see `docs/09-xrt-stack.md` troubleshooting). | Confirmed on UM5606WA, kernel 6.17.0-20, ROCm 7.2.3 |
 | AMD XDNA full SDK | Limited public access in 2026; Ryzen AI Software for Linux is Windows-first | https://ryzenai.docs.amd.com |
+
+## Known workarounds
+
+### Chrome APT `N: Skipping acquire … doesn't support architecture 'i386'`
+
+The Google Chrome APT repo only distributes `amd64` packages but apt tries to fetch `i386` metadata too. Fix by pinning the architecture in the source file (idempotent; may revert on Chrome package reinstall):
+
+```bash
+sudo sed -i '/^Components:/a Architectures: amd64' /etc/apt/sources.list.d/google-chrome.sources
+sudo apt update   # warning should be gone
+```
 
 ## Variants we have not tested
 
