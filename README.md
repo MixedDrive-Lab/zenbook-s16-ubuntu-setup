@@ -134,6 +134,43 @@ zenbook-s16-ubuntu-setup/
 - ⚠️ Intel laptops: kernel pin is irrelevant. The rest mostly works but is untested.
 - ❌ Non-Ubuntu distros: not supported. Pre-flight will warn.
 
+## Manual builds
+
+### btop with GPU monitoring (AMD ROCm)
+
+The Ubuntu-packaged `btop` (v1.3.0) ships without GPU support. To get AMD GPU monitoring via ROCm SMI, build v1.4.7+ from source:
+
+```bash
+# Remove the apt version
+sudo apt remove -y btop
+
+# Install GCC 14 (required for C++23)
+sudo apt install -y g++-14 gcc-14
+
+# Clone, build, install
+git clone --depth 1 --branch v1.4.7 https://github.com/aristocratos/btop.git /tmp/btop-build
+cmake -B /tmp/btop-build/build -S /tmp/btop-build \
+  -DBTOP_GPU=ON \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CXX_COMPILER=g++-14 \
+  -DCMAKE_C_COMPILER=gcc-14 \
+  -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build /tmp/btop-build/build -j$(nproc)
+sudo cmake --install /tmp/btop-build/build
+
+# Clean up
+rm -rf /tmp/btop-build
+
+# Refresh shell hash and verify
+hash -r
+btop --version
+# Expected: btop version: 1.4.7 ... BTOP_GPU=ON
+```
+
+Requires ROCm SMI (`rocm-smi-lib`) at runtime — already installed by Stage B section 11a. Use keys `5`–`7` / `0` inside btop to toggle GPU boxes.
+
+> **Note:** btop does not support XRT/NPU monitoring — only AMD (ROCm SMI), NVIDIA (nvidia-ml), and Intel (sysfs) GPUs.
+
 ## Contributing
 
 Bug reports for different Zenbook revisions are very welcome — please use the **Hardware compatibility report** issue template. PRs to add new opt-in sections (e.g. `--with-rust-embedded`, `--with-data-science`) are also welcome; keep them behind a flag and update the README table.
