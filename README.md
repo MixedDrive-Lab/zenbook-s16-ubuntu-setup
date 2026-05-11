@@ -2,7 +2,7 @@
 
 > Battle-tested Ubuntu 24.04 LTS setup for ASUS Zenbook S16 (UM5606) with AMD Ryzen AI 9 HX 370. Kernel 6.17.0-20 pinned for amdxdna NPU compatibility. Auto-setup script + manual walkthrough.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/24.04/) [![Hardware](https://img.shields.io/badge/Hardware-Zenbook%20S16-blue)](https://github.com/MixedDrive-Lab/zenbook-s16-ubuntu-setup) [![Version](https://img.shields.io/badge/version-v0.3.10-brightgreen)](https://github.com/MixedDrive-Lab/zenbook-s16-ubuntu-setup/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/24.04/) [![Hardware](https://img.shields.io/badge/Hardware-Zenbook%20S16-blue)](https://github.com/mixeddrivelab/zenbook-s16-ubuntu-setup) [![Version](https://img.shields.io/badge/version-v0.3.11-brightgreen)](https://github.com/mixeddrivelab/zenbook-s16-ubuntu-setup/releases)
 
 ------
 
@@ -10,7 +10,7 @@
 
 This repository contains the development environment setup used at [MixedDrive Lab](https://mixeddrivelab.org/) on the primary research workstation: **ASUS Zenbook S16 (UM5606)** with **AMD Ryzen AI 9 HX 370** and **32 GB RAM**, running **Ubuntu 24.04.4 LTS** (Wayland).
 
-> **Status:** alpha (`v0.3.10`). Tested on a single Zenbook S16 UM5606HA. PRs welcome — see `.github/ISSUE_TEMPLATE/hardware_compat.md` if you have a different revision.
+> **Status:** alpha (`v0.3.11`). Tested on a single Zenbook S16 UM5606HA. PRs welcome — see `.github/ISSUE_TEMPLATE/hardware_compat.md` if you have a different revision.
 
 ## What this gives you
 
@@ -22,13 +22,13 @@ A **three-stage installer** with reboots aligned to natural hardware events. Eac
 | **B** | 03–09 + 11a | All APT packages (base + dev libs + Vulkan/Mesa + Ruby/Python deps), `mise` + Docker, AI stack (Cursor/Warp/Node 22/Claude Code), apps (1Password/Chrome/LocalSend/Typora/LazyGit/LazyDocker/etc), Flatpak apps (Obsidian/VLC/Spotify/Discord/etc), Steam + ProtonUp-Qt, **and** AMD XRT NPU prep (ROCm + render/video groups) | 🔄 Reboot to activate group membership |
 | **C** | 11b + 12 + 10 | XRT NPU runtime + 4 EULA-gated `.deb` files installed, 8 default languages via mise (Python/Node/Go/Java/Ruby+Rails/Erlang/Elixir/PHP/Rust — note: Erlang OTP build ~15–30 min), and `zenbook-validate` script generated | ✅ Run `zenbook-validate` |
 
-**XRT NPU bundle** (Stage B / C): the 4 XRT `.deb` files are EULA-gated and cannot be auto-downloaded. Stage A prints a heads-up so you can fetch them from [AMD Ryzen AI Software](https://www.amd.com/en/developer/resources/ryzen-ai-software.html) while the machine reboots. If the bundle is missing when Stage B runs, sec 11a is silently skipped (re-run with `--section 11a` once the bundle is in place). See [`docs/09-xrt-stack.md`](docs/09-xrt-stack.md).
+**XRT NPU bundle** (Stage B / C): the recommended path is to **build XRT 2.23 from source** (no AMD account needed, ~20 min) — see [`docs/09-xrt-stack.md`](docs/09-xrt-stack.md) § "Alternative: build from source". If you prefer the EULA-gated bundle from [AMD Ryzen AI Software](https://www.amd.com/en/developer/resources/ryzen-ai-software.html), Stage A prints a heads-up to fetch it while the machine reboots. If the bundle is missing when Stage B runs, sec 11a is silently skipped.
 
 ## Quick start
 
 ```bash
 # 1. Clone
-git clone https://github.com/MixedDrive-Lab/zenbook-s16-ubuntu-setup.git
+git clone https://github.com/mixeddrivelab/zenbook-s16-ubuntu-setup.git
 cd zenbook-s16-ubuntu-setup
 
 # 2. (Optional) Preview Stage B without changes
